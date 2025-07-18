@@ -10,6 +10,7 @@ from rich.table import Table
 from .agents import AgentManager
 from .config import Config
 from .jira_client import JIRAClient
+from .vector_db.vector_manager import VectorManager
 from .utils import build_jql_query
 
 app = typer.Typer(
@@ -38,6 +39,7 @@ def config():
         console.print(f"OpenAI API Key: {'*' * 20 if cfg.ai.openai_api_key else 'Not set'}")
         console.print(f"Default Project: {cfg.project.default_project_key}")
         console.print(f"Embeddings Model: {cfg.ai.embeddings_model}")
+        console.print(f"Vector DB Path: {cfg.ai.chroma_persist_directory}")
     except Exception as e:
         console.print(f"❌ Error loading configuration: {e}", style="bold red")
 
@@ -76,22 +78,140 @@ def test_jira():
 
 
 @app.command()
+def test_vector_db():
+    """Test vector database connection"""
+    try:
+        cfg = Config.load()
+        vector_manager = VectorManager(cfg)
+
+        stats = vector_manager.get_collection_stats()
+
+        console.print(Panel.fit("🔍 Vector Database Status", style="bold blue"))
+        console.print(f"✅ Vector database initialized")
+        console.print(f"Collection: {stats.get('collection_name', 'N/A')}")
+        console.print(f"Total Issues: {stats.get('total_issues', 0)}")
+        console.print(f"Embedding Model: {stats.get('embedding_model', 'N/A')}")
+
+    except Exception as e:
+        console.print(f"❌ Error testing vector database: {e}", style="bold red")
+
+
+@app.command()
 def test_agents():
     """Test AI agents initialization"""
     try:
         cfg = Config.load()
         client = JIRAClient(cfg)
-        manager = AgentManager(cfg, client)
 
+        # Initialize vector manager
+        try:
+            vector_manager = VectorManager(cfg)
+            console.print("✅ Vector database initialized", style="green")
+        except Exception as e:
+            console.print(f"⚠️ Vector database failed to initialize: {e}", style="yellow")
+            vector_manager = None
+
+        manager = AgentManager(cfg, client, vector_manager)
         status = manager.get_agent_status()
 
         console.print(Panel.fit("🤖 AI Agents Status", style="bold blue"))
         console.print(f"✅ Agents initialized: {status['agents_initialized']}")
         console.print(f"✅ Available agents: {', '.join(status['available_agents'])}")
         console.print(f"✅ JIRA connected: {status['jira_connected']}")
+        console.print(f"✅ Vector DB available: {status['vector_db_available']}")
+
+        if 'vector_db_stats' in status:
+            stats = status['vector_db_stats']
+            console.print(f"📊 Vector DB issues: {stats.get('total_issues', 0)}")
 
     except Exception as e:
         console.print(f"❌ Error testing agents: {e}", style="bold red")
+
+
+@app.command()
+def sync_vector_db(
+        project: Optional[str] = typer.Option(None, "--project", "-p", help="Project key to sync"),
+        force: bool = typer.Option(False, "--force", "-f", help="Force full refresh")
+):
+    """Sync JIRA issues with vector database"""
+    try:
+        cfg = Config.load()
+        client = JIRAClient(cfg)
+        vector_manager = VectorManager(cfg)
+
+        console.print(Panel.fit("🔄 Syncing Vector Database", style="bold yellow"))
+
+        with console.status("[bold green]Syncing issues..."):
+            result = vector_manager.sync_with_jira(
+                jira_client=client,
+                project_key=project,
+                force_refresh=force
+            )
+
+        if result['success']:
+            console.print(f"✅ Successfully synced {result.get('added', 0)} issues")
+
+            # Show updated stats
+            stats = vector_manager.get_collection_stats()
+            console.print(f"📊 Total issues in vector DB: {stats.get('total_issues', 0)}")
+        else:
+            console.print(f"❌ Sync failed: {result.get('error', 'Unknown error')}")
+
+    except Exception as e:
+        console.print(f"❌ Error syncing vector database: {e}", style="bold red")
+
+
+@app.command()
+def semantic_search(
+        query: str = typer.Argument(..., help="Search query"),
+        max_results: int = typer.Option(10, "--max", "-m", help="Maximum results"),
+        project: Optional[str] = typer.Option(None, "--project", "-p", help="Project filter"),
+        status: Optional[str] = typer.Option(None, "--status", "-s", help="Status filter")
+):
+    """Perform semantic search on JIRA issues"""
+    try:
+        cfg = Config.load()
+        vector_manager = VectorManager(cfg)
+
+        console.print(f"🔍 Semantic search: {query}")
+
+        # Prepare filters
+        filters = {}
+        if project:
+            filters['project'] = project
+        if status:
+            filters['status'] = status
+
+        results = vector_manager.semantic_search(
+            query=query,
+            n_results=max_results,
+            filters=filters
+        )
+
+        if results:
+            console.print(f"\n📋 Found {len(results)} similar issues:")
+            table = Table()
+            table.add_column("Key", style="cyan")
+            table.add_column("Summary", style="magenta")
+            table.add_column("Similarity", style="green")
+            table.add_column("Status", style="yellow")
+
+            for result in results:
+                metadata = result['metadata']
+                similarity = f"{result['similarity_score']:.2f}"
+
+                table.add_row(
+                    metadata['issue_key'],
+                    metadata['summary'][:50] + "..." if len(metadata['summary']) > 50 else metadata['summary'],
+                    similarity,
+                    metadata['status']
+                )
+            console.print(table)
+        else:
+            console.print("No similar issues found.", style="dim")
+
+    except Exception as e:
+        console.print(f"❌ Error performing semantic search: {e}", style="bold red")
 
 
 @app.command()
@@ -191,7 +311,15 @@ def query(
     try:
         cfg = Config.load()
         client = JIRAClient(cfg)
-        manager = AgentManager(cfg, client)
+
+        # Initialize vector manager
+        try:
+            vector_manager = VectorManager(cfg)
+        except Exception as e:
+            console.print(f"⚠️ Vector database not available: {e}", style="yellow")
+            vector_manager = None
+
+        manager = AgentManager(cfg, client, vector_manager)
 
         console.print(Panel.fit("🤖 Processing Natural Language Query", style="bold yellow"))
         console.print(f"Query: {text}")

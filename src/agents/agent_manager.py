@@ -6,6 +6,7 @@ from crewai import Crew, Task
 
 from ..config import Config
 from ..jira_client import JIRAClient
+from ..vector_db.vector_manager import VectorManager
 from .jira_query_agent import JIRAQueryAgent
 from .jira_action_agent import JIRAActionAgent
 
@@ -15,16 +16,17 @@ logger = logging.getLogger(__name__)
 class AgentManager:
     """Manages and coordinates multiple JIRA AI agents"""
 
-    def __init__(self, config: Config, jira_client: JIRAClient):
+    def __init__(self, config: Config, jira_client: JIRAClient, vector_manager: VectorManager = None):
         self.config = config
         self.jira_client = jira_client
+        self.vector_manager = vector_manager
         self.agents = self._initialize_agents()
 
     def _initialize_agents(self) -> Dict[str, Any]:
         """Initialize all agents"""
         try:
             agents = {
-                'query': JIRAQueryAgent(self.config, self.jira_client),
+                'query': JIRAQueryAgent(self.config, self.jira_client, self.vector_manager),
                 'action': JIRAActionAgent(self.config, self.jira_client)
             }
 
@@ -49,6 +51,8 @@ class AgentManager:
                 return self._handle_update_query(query, project)
             elif intent == 'transition':
                 return self._handle_transition_query(query, project)
+            elif intent == 'sync':
+                return self._handle_sync_query(query, project)
             else:
                 # Default to search if intent is unclear
                 return self._handle_search_query(query, project)
@@ -69,7 +73,12 @@ class AgentManager:
         create_keywords = ['create', 'new', 'add', 'make']
         update_keywords = ['update', 'modify', 'change', 'edit', 'fix']
         transition_keywords = ['move', 'transition', 'close', 'resolve', 'complete', 'start']
-        search_keywords = ['find', 'search', 'show', 'list', 'get', 'what', 'which']
+        search_keywords = ['find', 'search', 'show', 'list', 'get', 'what', 'which', 'similar']
+        sync_keywords = ['sync', 'synchronize', 'update database', 'refresh']
+
+        # Check for sync intent
+        if any(keyword in query_lower for keyword in sync_keywords):
+            return 'sync'
 
         # Check for create intent
         if any(keyword in query_lower for keyword in create_keywords):
@@ -93,15 +102,17 @@ class AgentManager:
     def _handle_search_query(self, query: str, project: Optional[str] = None) -> Dict[str, Any]:
         """Handle search queries using the Query Agent"""
         try:
+            # Enhanced task description for semantic search
             task_description = f"""
             Search for JIRA issues based on this query: "{query}"
             
             Instructions:
             1. Analyze the query to understand what the user is looking for
-            2. Use appropriate search tools to find relevant issues
-            3. If the query mentions specific issue keys, get detailed information
-            4. Provide a comprehensive response with relevant issue details
-            5. If no specific project is mentioned, use the default project: {project or self.config.project.default_project_key}
+            2. If the query is about finding similar issues or uses conceptual language, use semantic search
+            3. If the query is specific (issue keys, exact status, etc.), use traditional JQL search
+            4. If semantic search is available, try it first for better results
+            5. Provide comprehensive results with relevant issue details
+            6. If no specific project is mentioned, use the default project: {project or self.config.project.default_project_key}
             
             Query: {query}
             Project: {project or self.config.project.default_project_key}
@@ -181,10 +192,42 @@ class AgentManager:
             logger.error(f"Error handling transition query: {e}")
             return {'success': False, 'error': str(e)}
 
+    def _handle_sync_query(self, query: str, project: Optional[str] = None) -> Dict[str, Any]:
+        """Handle sync queries using the Query Agent"""
+        try:
+            task_description = f"""
+            Sync JIRA issues with the vector database based on this request: "{query}"
+            
+            Instructions:
+            1. Determine if this is a full sync or project-specific sync
+            2. Use the sync_vector_db tool to update the vector database
+            3. Provide status update on the sync operation
+            4. Show database statistics after sync
+            
+            Request: {query}
+            Project: {project or 'all projects'}
+            """
+
+            return self.agents['query'].execute_task(task_description)
+
+        except Exception as e:
+            logger.error(f"Error handling sync query: {e}")
+            return {'success': False, 'error': str(e)}
+
     def get_agent_status(self) -> Dict[str, Any]:
         """Get status of all agents"""
-        return {
+        status = {
             'agents_initialized': len(self.agents),
             'available_agents': list(self.agents.keys()),
-            'jira_connected': self.jira_client.test_connection()
+            'jira_connected': self.jira_client.test_connection(),
+            'vector_db_available': self.vector_manager is not None
         }
+
+        if self.vector_manager:
+            try:
+                vector_stats = self.vector_manager.get_collection_stats()
+                status['vector_db_stats'] = vector_stats
+            except Exception as e:
+                status['vector_db_error'] = str(e)
+
+        return status

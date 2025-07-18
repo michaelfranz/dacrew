@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from .base_agent import BaseJIRAAgent
 from ..utils import build_jql_query, extract_issue_keys, validate_issue_key
+from ..vector_db.semantic_search_tool import SemanticSearchTool, VectorSyncTool, VectorStatsTool
 
 logger = logging.getLogger(__name__)
 
@@ -137,14 +138,19 @@ class GetProjectInfoTool(BaseTool):
 class JIRAQueryAgent(BaseJIRAAgent):
     """Agent specialized in querying and retrieving JIRA issues"""
 
+    def __init__(self, config, jira_client, vector_manager=None):
+        self.vector_manager = vector_manager
+        super().__init__(config, jira_client)
+
     def _create_agent(self) -> Agent:
         """Create the JIRA Query Agent"""
         return Agent(
             role="JIRA Query Specialist",
-            goal="Search, retrieve, and analyze JIRA issues based on user queries",
-            backstory="""You are an expert in JIRA Query Language (JQL) and JIRA issue management. 
-            You help users find the exact issues they're looking for by translating their natural 
-            language requests into precise JQL queries and retrieving detailed issue information.""",
+            goal="Search, retrieve, and analyze JIRA issues using both traditional JQL and semantic search",
+            backstory="""You are an expert in JIRA Query Language (JQL) and semantic search technologies. 
+            You help users find the exact issues they're looking for by using both traditional JQL queries 
+            and advanced semantic search to understand the meaning behind their requests. You can find 
+            similar issues even when the exact keywords don't match.""",
             tools=self.get_tools(),
             llm=self.llm,
             verbose=True
@@ -158,7 +164,20 @@ class JIRAQueryAgent(BaseJIRAAgent):
             GetProjectInfoTool()
         ]
 
-        # Inject jira_client into each tool
+        # Add semantic search tools if vector manager is available
+        if self.vector_manager:
+            semantic_tools = [
+                SemanticSearchTool(),
+                VectorSyncTool(),
+                VectorStatsTool()
+            ]
+            tools.extend(semantic_tools)
+
+            # Inject vector_manager into semantic tools
+            for tool in semantic_tools:
+                setattr(tool, '_vector_manager', self.vector_manager)
+
+        # Inject jira_client into all tools
         for tool in tools:
             setattr(tool, '_jira_client', self.jira_client)
 

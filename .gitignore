@@ -3,3 +3,11 @@
 /db/
 /.idea/
 .env
+
+# Vector database files
+/data/
+*.sqlite3
+
+# Model cache (optional - these can be large)
+.cache/
+

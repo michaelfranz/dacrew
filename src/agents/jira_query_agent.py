@@ -7,150 +7,161 @@ from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 
 from .base_agent import BaseJIRAAgent
-from ..utils import build_jql_query, extract_issue_keys, validate_issue_key
-from ..vector_db.semantic_search_tool import SemanticSearchTool, VectorSyncTool, VectorStatsTool
+from ..utils import build_jql_query, parse_natural_language_query, validate_issue_key
 
 logger = logging.getLogger(__name__)
+
+
+class SearchIssuesInput(BaseModel):
+    """Input schema for search_issues tool"""
+    query: str = Field(..., description="JQL query or natural language search query")
+    project: Optional[str] = Field(None, description="JIRA project key (optional)")
+    max_results: int = Field(10, description="Maximum number of results to return")
 
 
 class SearchIssuesTool(BaseTool):
     """Tool for searching JIRA issues"""
     name: str = "search_issues"
-    description: str = "Search for JIRA issues using JQL or natural language query. Parameters: query (str), project (str, optional), max_results (int, default=10)"
+    description: str = "Search for JIRA issues using JQL or natural language query"
+    args_schema: type[BaseModel] = SearchIssuesInput
 
-    def _run(self, query: str, project: str = None, max_results: int = 10) -> str:
+    def _run(self, query: str, project: Optional[str] = None, max_results: int = 10) -> str:
         """Search for JIRA issues"""
-        # Access jira_client from the agent that created this tool
         jira_client = getattr(self, '_jira_client', None)
         if not jira_client:
             return "Error: JIRA client not available"
 
         try:
-            # Check if query is already JQL or needs to be built
-            if any(keyword in query.lower() for keyword in ['and', 'or', 'order by', '=']):
+            # If query looks like JQL, use it directly
+            if any(keyword in query.lower() for keyword in ['and', 'or', 'order by', '=', 'project']):
                 jql = query
             else:
-                jql = build_jql_query(
-                    project=project,
-                    text_search=query
-                )
+                # Parse natural language query
+                params = parse_natural_language_query(query)
+                if project:
+                    params['project'] = project
 
+                jql = build_jql_query(**params)
+
+            logger.info(f"Searching with JQL: {jql}")
             issues = jira_client.search_issues(jql, max_results)
 
             if not issues:
-                return f"No issues found for query: {query}"
+                return "No issues found matching the query."
 
             # Format results
             result = f"Found {len(issues)} issue(s):\n\n"
             for issue in issues:
-                result += f"• [{issue['key']}] {issue['summary']}\n"
-                result += f"  Status: {issue['status']} | Assignee: {issue['assignee']}\n"
-                result += f"  URL: {issue['url']}\n\n"
+                result += f"**{issue['key']}** - {issue['summary']}\n"
+                result += f"Status: {issue['status']} | Priority: {issue['priority']} | Assignee: {issue['assignee']}\n"
+                result += f"URL: {issue['url']}\n\n"
 
             return result
 
         except Exception as e:
             logger.error(f"Error searching issues: {e}")
-            return f"Error searching issues: {str(e)}"
+            return f"❌ Error searching issues: {str(e)}"
 
 
-class GetIssueDetailsTool(BaseTool):
-    """Tool for getting detailed information about a specific issue"""
-    name: str = "get_issue_details"
-    description: str = "Get detailed information about a specific JIRA issue. Parameters: issue_key (str)"
+class GetIssueInput(BaseModel):
+    """Input schema for get_issue tool"""
+    issue_key: str = Field(..., description="JIRA issue key (e.g., 'PROJ-123')")
+
+
+class GetIssueTool(BaseTool):
+    """Tool for getting details of a specific JIRA issue"""
+    name: str = "get_issue"
+    description: str = "Get detailed information about a specific JIRA issue"
+    args_schema: type[BaseModel] = GetIssueInput
 
     def _run(self, issue_key: str) -> str:
-        """Get detailed information about a specific issue"""
+        """Get details of a specific JIRA issue"""
         jira_client = getattr(self, '_jira_client', None)
         if not jira_client:
             return "Error: JIRA client not available"
 
         try:
             if not validate_issue_key(issue_key):
-                return f"Invalid issue key format: {issue_key}"
+                return f"❌ Invalid issue key format: {issue_key}"
 
             issue = jira_client.get_issue(issue_key)
-
             if not issue:
-                return f"Issue {issue_key} not found"
+                return f"❌ Issue {issue_key} not found"
 
-            # Format detailed information
-            result = f"ISSUE DETAILS: {issue['key']}\n"
-            result += f"{'=' * 50}\n"
-            result += f"Summary: {issue['summary']}\n"
-            result += f"Status: {issue['status']}\n"
-            result += f"Priority: {issue['priority']}\n"
-            result += f"Type: {issue['issue_type']}\n"
-            result += f"Project: {issue['project']}\n"
-            result += f"Assignee: {issue['assignee']}\n"
-            result += f"Reporter: {issue['reporter']}\n"
-            result += f"Created: {issue['created']}\n"
-            result += f"Updated: {issue['updated']}\n"
-            result += f"URL: {issue['url']}\n\n"
+            # Format issue details
+            result = f"**{issue['key']}** - {issue['summary']}\n\n"
+            result += f"**Status:** {issue['status']}\n"
+            result += f"**Priority:** {issue['priority']}\n"
+            result += f"**Assignee:** {issue['assignee']}\n"
+            result += f"**Reporter:** {issue['reporter']}\n"
+            result += f"**Type:** {issue['issue_type']}\n"
+            result += f"**Project:** {issue['project']}\n"
+            result += f"**Created:** {issue['created']}\n"
+            result += f"**Updated:** {issue['updated']}\n"
+            result += f"**URL:** {issue['url']}\n"
 
             if issue['description']:
-                result += f"Description:\n{issue['description']}\n\n"
+                result += f"\n**Description:**\n{issue['description']}\n"
 
             if issue['labels']:
-                result += f"Labels: {', '.join(issue['labels'])}\n"
-
-            if issue['components']:
-                result += f"Components: {', '.join(issue['components'])}\n"
+                result += f"\n**Labels:** {', '.join(issue['labels'])}\n"
 
             return result
 
         except Exception as e:
-            logger.error(f"Error getting issue details: {e}")
-            return f"Error getting issue details: {str(e)}"
+            logger.error(f"Error getting issue: {e}")
+            return f"❌ Error getting issue: {str(e)}"
 
 
-class GetProjectInfoTool(BaseTool):
-    """Tool for getting project information"""
-    name: str = "get_project_info"
-    description: str = "Get information about available JIRA projects. No parameters required."
+class GetIssueCommentsInput(BaseModel):
+    """Input schema for get_issue_comments tool"""
+    issue_key: str = Field(..., description="JIRA issue key (e.g., 'PROJ-123')")
 
-    def _run(self) -> str:
-        """Get information about available projects"""
+
+class GetIssueCommentsTool(BaseTool):
+    """Tool for getting comments from a JIRA issue"""
+    name: str = "get_issue_comments"
+    description: str = "Get all comments from a JIRA issue"
+    args_schema: type[BaseModel] = GetIssueCommentsInput
+
+    def _run(self, issue_key: str) -> str:
+        """Get comments from a JIRA issue"""
         jira_client = getattr(self, '_jira_client', None)
         if not jira_client:
             return "Error: JIRA client not available"
 
         try:
-            projects = jira_client.get_projects()
+            if not validate_issue_key(issue_key):
+                return f"❌ Invalid issue key format: {issue_key}"
 
-            if not projects:
-                return "No projects found or accessible"
+            comments = jira_client.get_issue_comments(issue_key)
 
-            result = f"Available Projects ({len(projects)}):\n\n"
-            for project in projects:
-                result += f"• {project['key']} - {project['name']}\n"
-                if project['description']:
-                    result += f"  Description: {project['description'][:100]}...\n"
-                result += "\n"
+            if not comments:
+                return f"No comments found for issue {issue_key}"
+
+            result = f"Comments for {issue_key}:\n\n"
+            for comment in comments:
+                result += f"**{comment['author']}** ({comment['created']}):\n"
+                result += f"{comment['body']}\n\n"
 
             return result
 
         except Exception as e:
-            logger.error(f"Error getting project info: {e}")
-            return f"Error getting project info: {str(e)}"
+            logger.error(f"Error getting comments: {e}")
+            return f"❌ Error getting comments: {str(e)}"
 
 
 class JIRAQueryAgent(BaseJIRAAgent):
     """Agent specialized in querying and retrieving JIRA issues"""
 
-    def __init__(self, config, jira_client, vector_manager=None):
-        self.vector_manager = vector_manager
-        super().__init__(config, jira_client)
-
     def _create_agent(self) -> Agent:
         """Create the JIRA Query Agent"""
         return Agent(
             role="JIRA Query Specialist",
-            goal="Search, retrieve, and analyze JIRA issues using both traditional JQL and semantic search",
-            backstory="""You are an expert in JIRA Query Language (JQL) and semantic search technologies. 
-            You help users find the exact issues they're looking for by using both traditional JQL queries 
-            and advanced semantic search to understand the meaning behind their requests. You can find 
-            similar issues even when the exact keywords don't match.""",
+            goal="Search, retrieve, and analyze JIRA issues based on user queries",
+            backstory="""You are an expert in JIRA query languages and data retrieval. 
+            You help users find specific issues, analyze ticket patterns, and extract 
+            meaningful insights from JIRA data using both JQL and natural language queries.""",
             tools=self.get_tools(),
             llm=self.llm,
             verbose=True
@@ -160,25 +171,33 @@ class JIRAQueryAgent(BaseJIRAAgent):
         """Get tools for the JIRA Query Agent"""
         tools = [
             SearchIssuesTool(),
-            GetIssueDetailsTool(),
-            GetProjectInfoTool()
+            GetIssueTool(),
+            GetIssueCommentsTool()
         ]
 
-        # Add semantic search tools if vector manager is available
-        if self.vector_manager:
-            semantic_tools = [
-                SemanticSearchTool(),
-                VectorSyncTool(),
-                VectorStatsTool()
-            ]
-            tools.extend(semantic_tools)
-
-            # Inject vector_manager into semantic tools
-            for tool in semantic_tools:
-                setattr(tool, '_vector_manager', self.vector_manager)
-
-        # Inject jira_client into all tools
+        # Inject jira_client into each tool
         for tool in tools:
             setattr(tool, '_jira_client', self.jira_client)
 
         return tools
+
+    def search_issues(self, query: str, project: Optional[str] = None, max_results: int = 10) -> str:
+        """Search for issues using natural language or JQL"""
+        task_description = f"""
+        Search for JIRA issues based on this query: "{query}"
+        
+        Guidelines:
+        - If the query mentions "high priority", search for issues with priority = High
+        - If the query mentions "assigned to me", use the current user context
+        - If the query mentions specific status, filter by that status
+        - If the query is already in JQL format, use it directly
+        - Otherwise, build an appropriate JQL query
+        
+        Project context: {project or self.config.project.default_project_key}
+        Max results: {max_results}
+        
+        Use the search_issues tool to find the issues and provide a clear summary.
+        """
+
+        result = self.execute_task(task_description)
+        return result.get('result', 'No results found')

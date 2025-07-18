@@ -2,7 +2,7 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from crewai import Agent, Task, Crew
 from langchain_openai import ChatOpenAI
@@ -16,9 +16,10 @@ logger = logging.getLogger(__name__)
 class BaseJIRAAgent(ABC):
     """Base class for JIRA AI agents"""
 
-    def __init__(self, config: Config, jira_client: JIRAClient):
+    def __init__(self, config: Config, jira_client: JIRAClient, vector_manager=None):
         self.config = config
         self.jira_client = jira_client
+        self.vector_manager = vector_manager
         self.llm = self._initialize_llm()
         self.agent = self._create_agent()
 
@@ -43,9 +44,11 @@ class BaseJIRAAgent(ABC):
     def execute_task(self, task_description: str, **kwargs) -> Dict[str, Any]:
         """Execute a task with this agent"""
         try:
+            # CrewAI requires expected_output parameter
             task = Task(
                 description=task_description,
                 agent=self.agent,
+                expected_output="A clear and comprehensive response to the user's query with relevant JIRA issue information.",
                 **kwargs
             )
 

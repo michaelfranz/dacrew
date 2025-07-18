@@ -1,3 +1,4 @@
+
 """Utilities package for JIRA AI Assistant"""
 
 from .jira_utils import (
@@ -8,6 +9,7 @@ from .jira_utils import (
     get_common_priorities,
     get_common_issue_types,
     parse_relative_date,
+    parse_natural_language_query,
     validate_issue_key
 )
 
@@ -19,5 +21,6 @@ __all__ = [
     'get_common_priorities',
     'get_common_issue_types',
     'parse_relative_date',
+    'parse_natural_language_query',
     'validate_issue_key'
 ]

@@ -341,5 +341,50 @@ def query(
         console.print(f"❌ Error processing query: {e}", style="bold red")
 
 
+@app.command()
+def show_metadata(
+        project: Optional[str] = typer.Option(None, "--project", "-p", help="Project key")
+):
+    """Show available issue types, priorities, and other metadata"""
+    try:
+        cfg = Config.load()
+        client = JIRAClient(cfg)
+
+        console.print(Panel.fit("📊 JIRA Metadata", style="bold blue"))
+
+        # Show issue types
+        issue_types = client.get_issue_types(project)
+        if issue_types:
+            console.print("\n🏷️ Available Issue Types:")
+            table = Table()
+            table.add_column("Name", style="cyan")
+            table.add_column("Description", style="dim")
+
+            for it in issue_types:
+                table.add_row(
+                    it['name'],
+                    it['description'][:50] + "..." if len(it['description']) > 50 else it['description']
+                )
+            console.print(table)
+
+        # Show priorities
+        priorities = client.get_priorities()
+        if priorities:
+            console.print("\n⚡ Available Priorities:")
+            table = Table()
+            table.add_column("Name", style="cyan")
+            table.add_column("Description", style="dim")
+
+            for p in priorities:
+                table.add_row(
+                    p['name'],
+                    p['description'][:50] + "..." if len(p['description']) > 50 else p['description']
+                )
+            console.print(table)
+
+    except Exception as e:
+        console.print(f"❌ Error getting metadata: {e}", style="bold red")
+
+
 if __name__ == "__main__":
     app()

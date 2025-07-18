@@ -57,21 +57,59 @@ class JIRAClient:
             logger.error(f"Failed to get projects: {e}")
             return []
 
-    def get_issue_types(self, project_key: str) -> List[Dict[str, Any]]:
-        """Get issue types for a project"""
+    def get_issue_types(self, project_key: str = None) -> List[Dict[str, Any]]:
+        """Get issue types for a project or all available issue types"""
         try:
-            project = self._client.project(project_key)
+            if project_key:
+                project = self._client.project(project_key)
+                issue_types = project.issueTypes
+            else:
+                # Get all issue types
+                issue_types = self._client.issue_types()
+
             return [
                 {
                     'id': issue_type.id,
                     'name': issue_type.name,
                     'description': getattr(issue_type, 'description', ''),
-                    'subtask': issue_type.subtask
+                    'subtask': getattr(issue_type, 'subtask', False)
                 }
-                for issue_type in project.issueTypes
+                for issue_type in issue_types
             ]
         except JIRAError as e:
-            logger.error(f"Failed to get issue types for {project_key}: {e}")
+            logger.error(f"Failed to get issue types: {e}")
+            return []
+
+    def get_priorities(self) -> List[Dict[str, Any]]:
+        """Get available priorities"""
+        try:
+            priorities = self._client.priorities()
+            return [
+                {
+                    'id': p.id,
+                    'name': p.name,
+                    'description': getattr(p, 'description', '')
+                }
+                for p in priorities
+            ]
+        except JIRAError as e:
+            logger.error(f"Failed to get priorities: {e}")
+            return []
+
+    def get_statuses(self) -> List[Dict[str, Any]]:
+        """Get available statuses"""
+        try:
+            statuses = self._client.statuses()
+            return [
+                {
+                    'id': s.id,
+                    'name': s.name,
+                    'description': getattr(s, 'description', '')
+                }
+                for s in statuses
+            ]
+        except JIRAError as e:
+            logger.error(f"Failed to get statuses: {e}")
             return []
 
     def search_issues(self, jql: str, max_results: int = 50) -> List[Dict[str, Any]]:

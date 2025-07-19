@@ -262,6 +262,154 @@ class JIRAClient:
             logger.error(f"Unexpected error creating issue: {e}")
             return None
 
+    def create_subtask(self, parent_issue_key: str, summary: str, description: str,
+                      issue_type: str = "Sub-task", **kwargs) -> Optional[Dict[str, Any]]:
+        """Create a subtask for an existing issue"""
+        try:
+            # Get parent issue to determine project
+            parent_issue = self.get_issue(parent_issue_key)
+            if not parent_issue:
+                raise ValueError(f"Parent issue '{parent_issue_key}' not found")
+            
+            project_key = parent_issue['project']
+            
+            # Validate subtask issue type for the project
+            valid_issue_types = self.get_issue_types(project_key)
+            valid_subtask_types = [it['name'] for it in valid_issue_types if it.get('subtask', False)]
+            
+            if not valid_subtask_types:
+                raise ValueError(f"No subtask types available for project '{project_key}'")
+            
+            # If the provided issue type is not a subtask type, try to find a suitable one
+            if issue_type not in valid_subtask_types:
+                if 'Sub-task' in valid_subtask_types:
+                    issue_type = 'Sub-task'
+                elif 'Subtask' in valid_subtask_types:
+                    issue_type = 'Subtask'
+                else:
+                    issue_type = valid_subtask_types[0]  # Use the first available subtask type
+                
+                logger.info(f"Using subtask type '{issue_type}' for parent issue {parent_issue_key}")
+
+            # Get available fields for this subtask type
+            available_fields = self.get_create_meta(project_key, issue_type)
+
+            issue_dict = {
+                'project': {'key': project_key},
+                'parent': {'key': parent_issue_key},
+                'summary': summary,
+                'description': description,
+                'issuetype': {'name': issue_type}
+            }
+
+            # Only add fields that are actually available for this issue type
+            for field_key, field_value in kwargs.items():
+                if field_key in available_fields:
+                    issue_dict[field_key] = field_value
+                else:
+                    logger.warning(f"Field '{field_key}' not available for subtask type '{issue_type}', skipping")
+
+            new_subtask = self._client.create_issue(fields=issue_dict)
+            logger.info(f"Created subtask: {new_subtask.key} for parent {parent_issue_key}")
+            return self._format_issue(new_subtask)
+            
+        except ValueError as e:
+            logger.error(f"Validation error creating subtask: {e}")
+            raise
+        except JIRAError as e:
+            logger.error(f"Failed to create subtask: {e}")
+            
+            # Parse the error for better user feedback
+            parsed_error = self._parse_jira_error(e)
+            
+            # Provide helpful suggestions
+            suggestions = []
+            
+            if "parent" in parsed_error.lower():
+                suggestions.append(f"Make sure parent issue '{parent_issue_key}' exists and is accessible")
+                suggestions.append("Check that the parent issue allows subtasks")
+            
+            if "issue type" in parsed_error.lower():
+                parent_issue = self.get_issue(parent_issue_key)
+                if parent_issue:
+                    project_key = parent_issue['project']
+                    valid_issue_types = self.get_issue_types(project_key)
+                    valid_subtask_types = [it['name'] for it in valid_issue_types if it.get('subtask', False)]
+                    if valid_subtask_types:
+                        suggestions.append(f"Valid subtask types for project '{project_key}': {', '.join(valid_subtask_types)}")
+                    else:
+                        suggestions.append(f"No subtask types are configured for project '{project_key}'")
+            
+            error_message = f"JIRA Error: {parsed_error}"
+            if suggestions:
+                error_message += f"\n\nSuggestions:\n• " + "\n• ".join(suggestions)
+            
+            raise JIRAError(error_message)
+            
+        except Exception as e:
+            logger.error(f"Unexpected error creating subtask: {e}")
+            return None
+
+    def get_subtasks(self, parent_issue_key: str) -> List[Dict[str, Any]]:
+        """Get all subtasks for a parent issue"""
+        try:
+            # Search for subtasks using JQL
+            jql = f"parent = {parent_issue_key}"
+            return self.search_issues(jql)
+        except Exception as e:
+            logger.error(f"Failed to get subtasks for {parent_issue_key}: {e}")
+            return []
+
+    def link_issues(self, issue_key: str, linked_issue_key: str, 
+                   link_type: str = "relates to") -> bool:
+        """Create a link between two issues"""
+        try:
+            self._client.create_issue_link(
+                type=link_type,
+                inwardIssue=issue_key,
+                outwardIssue=linked_issue_key
+            )
+            logger.info(f"Linked {issue_key} to {linked_issue_key} with link type '{link_type}'")
+            return True
+        except JIRAError as e:
+            logger.error(f"Failed to link issues: {e}")
+            return False
+
+    def get_issue_links(self, issue_key: str) -> List[Dict[str, Any]]:
+        """Get all links for an issue"""
+        try:
+            issue = self._client.issue(issue_key)
+            links = []
+            
+            for link in issue.fields.issuelinks:
+                link_data = {
+                    'link_type': link.type.name,
+                    'direction': None,
+                    'linked_issue': None
+                }
+                
+                if hasattr(link, 'outwardIssue'):
+                    link_data['direction'] = 'outward'
+                    link_data['linked_issue'] = {
+                        'key': link.outwardIssue.key,
+                        'summary': link.outwardIssue.fields.summary,
+                        'status': link.outwardIssue.fields.status.name
+                    }
+                elif hasattr(link, 'inwardIssue'):
+                    link_data['direction'] = 'inward'
+                    link_data['linked_issue'] = {
+                        'key': link.inwardIssue.key,
+                        'summary': link.inwardIssue.fields.summary,
+                        'status': link.inwardIssue.fields.status.name
+                    }
+                
+                links.append(link_data)
+            
+            return links
+        except JIRAError as e:
+            logger.error(f"Failed to get issue links for {issue_key}: {e}")
+            return []
+
     def update_issue(self, issue_key: str, **fields) -> bool:
         """Update an existing issue"""
         try:
@@ -272,6 +420,7 @@ class JIRAClient:
         except JIRAError as e:
             logger.error(f"Failed to update issue {issue_key}: {e}")
             return False
+
 
     def add_comment(self, issue_key: str, comment: str) -> bool:
         """Add a comment to an issue"""

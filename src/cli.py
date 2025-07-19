@@ -5,12 +5,13 @@ from typing import Optional, List
 import typer
 from rich.console import Console
 from rich.panel import Panel
+from rich.prompt import Prompt, Confirm
 from rich.table import Table
 
 from .agents import AgentManager
 from .config import Config
 from .jira_client import JIRAClient
-from .utils import build_jql_query
+from .utils import build_jql_query, validate_issue_key
 from .vector_db.vector_manager import VectorManager
 
 app = typer.Typer(
@@ -339,6 +340,278 @@ def update_issue(
     except Exception as e:
         console.print(f"❌ Error updating issue: {e}", style="bold red")
 
+
+@app.command()
+def create_subtask(
+        parent_issue: str = typer.Argument(..., help="Parent issue key (e.g., PROJ-123)"),
+        summary: str = typer.Argument(..., help="Subtask summary"),
+        issue_type: str = typer.Option("Sub-task", "--type", "-t", help="Subtask type"),
+        priority: Optional[str] = typer.Option(None, "--priority", help="Priority"),
+        assignee: Optional[str] = typer.Option(None, "--assignee", "-a", help="Assignee username"),
+        description: Optional[str] = typer.Option(None, "--description", "-d", help="Subtask description"),
+        labels: Optional[List[str]] = typer.Option(None, "--label", "-l", help="Labels (can be used multiple times)"),
+        interactive: bool = typer.Option(False, "--interactive", "-i", help="Interactive mode")
+):
+    """Create a subtask for an existing issue"""
+    try:
+        from .utils import validate_issue_key
+
+        cfg = Config.load()
+        client = JIRAClient(cfg)
+
+        if not validate_issue_key(parent_issue):
+            console.print(f"❌ Invalid parent issue key format: {parent_issue}", style="bold red")
+            return
+
+        # Verify parent issue exists
+        parent = client.get_issue(parent_issue)
+        if not parent:
+            console.print(f"❌ Parent issue {parent_issue} not found", style="bold red")
+            return
+
+        console.print(f"📋 Parent Issue: {parent['key']} - {parent['summary']}", style="dim")
+
+        if interactive:
+            console.print(Panel.fit(f"📝 Create Subtask for: {parent_issue}", style="bold blue"))
+
+            # Get available subtask types
+            project_key = parent['project']
+            issue_types = client.get_issue_types(project_key)
+            subtask_types = [it['name'] for it in issue_types if it.get('subtask', False)]
+
+            if subtask_types:
+                console.print("\nAvailable subtask types:")
+                for st in subtask_types:
+                    console.print(f"  {st}")
+                issue_type = Prompt.ask("Enter subtask type", default="Sub-task")
+            else:
+                console.print("⚠️ No subtask types available for this project", style="yellow")
+                issue_type = "Sub-task"  # Try default anyway
+
+            # Get priority
+            priorities = client.get_priorities()
+            if priorities:
+                console.print("\nAvailable priorities:")
+                for p in priorities:
+                    console.print(f"  {p['name']}")
+                priority = Prompt.ask("Enter priority (optional)", default="")
+                if not priority:
+                    priority = None
+
+            # Get other fields
+            if not summary:
+                summary = Prompt.ask("Enter subtask summary")
+            if not description:
+                description = Prompt.ask("Enter description (optional)", default="")
+                if not description:
+                    description = None
+            if not assignee:
+                assignee = Prompt.ask("Enter assignee (optional)", default="")
+                if not assignee:
+                    assignee = None
+
+        # Prepare subtask data
+        subtask_data = {}
+        if priority:
+            subtask_data['priority'] = {'name': priority}
+        if assignee:
+            subtask_data['assignee'] = {'name': assignee}
+        if labels:
+            subtask_data['labels'] = labels
+
+        console.print(f"\n📝 Creating subtask for {parent_issue}...")
+
+        with console.status("[bold green]Creating subtask..."):
+            subtask = client.create_subtask(
+                parent_issue_key=parent_issue,
+                summary=summary,
+                description=description or "",
+                issue_type=issue_type,
+                **subtask_data
+            )
+
+        if subtask:
+            console.print(f"✅ Subtask created successfully: {subtask['key']}", style="bold green")
+            console.print(f"Parent: {parent_issue}")
+            console.print(f"Summary: {subtask['summary']}")
+            console.print(f"URL: {subtask['url']}")
+        else:
+            console.print("❌ Failed to create subtask", style="bold red")
+
+    except Exception as e:
+        console.print(f"❌ Error creating subtask: {e}", style="bold red")
+
+
+@app.command()
+def show_subtasks(parent_issue: str = typer.Argument(..., help="Parent issue key (e.g., PROJ-123)")):
+    """Show all subtasks for an issue"""
+    try:
+        from .utils import validate_issue_key
+
+        cfg = Config.load()
+        client = JIRAClient(cfg)
+
+        if not validate_issue_key(parent_issue):
+            console.print(f"❌ Invalid issue key format: {parent_issue}", style="bold red")
+            return
+
+        # Verify parent issue exists
+        parent = client.get_issue(parent_issue)
+        if not parent:
+            console.print(f"❌ Issue {parent_issue} not found", style="bold red")
+            return
+
+        console.print(f"📋 Parent Issue: {parent['key']} - {parent['summary']}")
+
+        subtasks = client.get_subtasks(parent_issue)
+
+        if subtasks:
+            console.print(f"\n🔗 Found {len(subtasks)} subtask(s):")
+
+            table = Table()
+            table.add_column("Key", style="cyan")
+            table.add_column("Summary", style="magenta")
+            table.add_column("Status", style="green")
+            table.add_column("Assignee", style="yellow")
+            table.add_column("Priority", style="red")
+
+            for subtask in subtasks:
+                table.add_row(
+                    subtask['key'],
+                    subtask['summary'][:50] + "..." if len(subtask['summary']) > 50 else subtask['summary'],
+                    subtask['status'],
+                    subtask['assignee'][:15] + "..." if len(subtask['assignee']) > 15 else subtask['assignee'],
+                    subtask['priority']
+                )
+
+            console.print(table)
+        else:
+            console.print(f"No subtasks found for {parent_issue}", style="dim")
+
+    except Exception as e:
+        console.print(f"❌ Error getting subtasks: {e}", style="bold red")
+
+
+@app.command()
+def link_issues(
+        issue1: str = typer.Argument(..., help="First issue key"),
+        issue2: str = typer.Argument(..., help="Second issue key"),
+        link_type: str = typer.Option("relates to", "--type", "-t", help="Link type"),
+        interactive: bool = typer.Option(False, "--interactive", "-i", help="Interactive mode")
+):
+    """Create a link between two issues"""
+    try:
+        from .utils import validate_issue_key
+
+        cfg = Config.load()
+        client = JIRAClient(cfg)
+
+        if not validate_issue_key(issue1) or not validate_issue_key(issue2):
+            console.print("❌ Invalid issue key format", style="bold red")
+            return
+
+        # Verify both issues exist
+        issue_1 = client.get_issue(issue1)
+        issue_2 = client.get_issue(issue2)
+
+        if not issue_1:
+            console.print(f"❌ Issue {issue1} not found", style="bold red")
+            return
+        if not issue_2:
+            console.print(f"❌ Issue {issue2} not found", style="bold red")
+            return
+
+        if interactive:
+            console.print(Panel.fit("🔗 Link Issues", style="bold blue"))
+            console.print(f"Issue 1: {issue_1['key']} - {issue_1['summary']}")
+            console.print(f"Issue 2: {issue_2['key']} - {issue_2['summary']}")
+
+            console.print("\nCommon link types:")
+            common_types = ["relates to", "blocks", "is blocked by", "duplicates", "is duplicated by", "causes", "is caused by"]
+            for lt in common_types:
+                console.print(f"  {lt}")
+
+            link_type = Prompt.ask("Enter link type", default="relates to")
+
+        console.print(f"\n🔗 Creating link between {issue1} and {issue2}...")
+
+        with console.status("[bold green]Creating link..."):
+            success = client.link_issues(issue1, issue2, link_type)
+
+        if success:
+            console.print(f"✅ Successfully linked {issue1} to {issue2} ({link_type})", style="bold green")
+        else:
+            console.print(f"❌ Failed to link issues", style="bold red")
+
+    except Exception as e:
+        console.print(f"❌ Error linking issues: {e}", style="bold red")
+
+
+@app.command()
+def show_links(issue_key: str = typer.Argument(..., help="Issue key (e.g., PROJ-123)")):
+    """Show all links for an issue"""
+    try:
+        from .utils import validate_issue_key
+
+        cfg = Config.load()
+        client = JIRAClient(cfg)
+
+        if not validate_issue_key(issue_key):
+            console.print(f"❌ Invalid issue key format: {issue_key}", style="bold red")
+            return
+
+        # Get issue details
+        issue = client.get_issue(issue_key)
+        if not issue:
+            console.print(f"❌ Issue {issue_key} not found", style="bold red")
+            return
+
+        console.print(f"📋 Issue: {issue['key']} - {issue['summary']}")
+
+        # Get subtasks
+        subtasks = client.get_subtasks(issue_key)
+        if subtasks:
+            console.print(f"\n📁 Subtasks ({len(subtasks)}):")
+            table = Table()
+            table.add_column("Key", style="cyan")
+            table.add_column("Summary", style="magenta")
+            table.add_column("Status", style="green")
+
+            for subtask in subtasks:
+                table.add_row(
+                    subtask['key'],
+                    subtask['summary'][:40] + "..." if len(subtask['summary']) > 40 else subtask['summary'],
+                    subtask['status']
+                )
+            console.print(table)
+
+        # Get issue links
+        links = client.get_issue_links(issue_key)
+        if links:
+            console.print(f"\n🔗 Issue Links ({len(links)}):")
+            table = Table()
+            table.add_column("Type", style="yellow")
+            table.add_column("Direction", style="blue")
+            table.add_column("Linked Issue", style="cyan")
+            table.add_column("Summary", style="magenta")
+            table.add_column("Status", style="green")
+
+            for link in links:
+                if link['linked_issue']:
+                    table.add_row(
+                        link['link_type'],
+                        link['direction'],
+                        link['linked_issue']['key'],
+                        link['linked_issue']['summary'][:40] + "..." if len(link['linked_issue']['summary']) > 40 else link['linked_issue']['summary'],
+                        link['linked_issue']['status']
+                    )
+            console.print(table)
+
+        if not subtasks and not links:
+            console.print("No subtasks or links found", style="dim")
+
+    except Exception as e:
+        console.print(f"❌ Error getting issue links: {e}", style="bold red")
 
 @app.command()
 def transition_issue(

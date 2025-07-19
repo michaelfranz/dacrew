@@ -1,6 +1,7 @@
-"""JIRA client for handling JIRA API operations"""
+"""Enhanced JIRA client with AI-friendly methods"""
 
 import logging
+import json
 from typing import List, Dict, Any, Optional
 from jira import JIRA
 from jira.exceptions import JIRAError
@@ -112,6 +113,59 @@ class JIRAClient:
             logger.error(f"Failed to get statuses: {e}")
             return []
 
+    def get_create_meta(self, project_key: str, issue_type: str) -> Dict[str, Any]:
+        """Get create metadata for a specific project and issue type"""
+        try:
+            # Get creation metadata to understand what fields are available
+            meta = self._client.createmeta(
+                projectKeys=project_key,
+                issuetypeNames=issue_type,
+                expand='projects.issuetypes.fields'
+            )
+            
+            if meta['projects']:
+                project = meta['projects'][0]
+                if project['issuetypes']:
+                    return project['issuetypes'][0]['fields']
+            return {}
+        except Exception as e:
+            logger.error(f"Failed to get create metadata: {e}")
+            return {}
+
+    def _parse_jira_error(self, error: JIRAError) -> str:
+        """Parse JIRA error response and provide helpful error messages"""
+        try:
+            # Try to extract the response text for detailed error info
+            if hasattr(error, 'response') and error.response:
+                try:
+                    error_data = json.loads(error.response.text)
+                    
+                    # Handle error messages
+                    if 'errorMessages' in error_data and error_data['errorMessages']:
+                        return "; ".join(error_data['errorMessages'])
+                    
+                    # Handle field-specific errors
+                    if 'errors' in error_data and error_data['errors']:
+                        error_details = []
+                        for field, message in error_data['errors'].items():
+                            if 'cannot be set' in message:
+                                error_details.append(f"Field '{field}' is not available for this issue type/project")
+                            elif 'unknown' in message.lower():
+                                error_details.append(f"Field '{field}': {message}")
+                            else:
+                                error_details.append(f"{field}: {message}")
+                        
+                        if error_details:
+                            return "; ".join(error_details)
+                
+                except (json.JSONDecodeError, AttributeError):
+                    pass
+            
+            return str(error)
+            
+        except Exception:
+            return str(error)
+
     def search_issues(self, jql: str, max_results: int = 50) -> List[Dict[str, Any]]:
         """Search for issues using JQL"""
         try:
@@ -134,6 +188,19 @@ class JIRAClient:
                      issue_type: str = "Task", **kwargs) -> Optional[Dict[str, Any]]:
         """Create a new issue"""
         try:
+            # Validate issue type for the project
+            valid_issue_types = self.get_issue_types(project_key)
+            valid_type_names = [it['name'] for it in valid_issue_types]
+            
+            if issue_type not in valid_type_names:
+                raise ValueError(
+                    f"Invalid issue type '{issue_type}' for project '{project_key}'. "
+                    f"Valid types: {', '.join(valid_type_names)}"
+                )
+
+            # Get available fields for this issue type to avoid field errors
+            available_fields = self.get_create_meta(project_key, issue_type)
+
             issue_dict = {
                 'project': {'key': project_key},
                 'summary': summary,
@@ -141,14 +208,58 @@ class JIRAClient:
                 'issuetype': {'name': issue_type}
             }
 
-            # Add any additional fields
-            issue_dict.update(kwargs)
+            # Only add fields that are actually available for this issue type
+            for field_key, field_value in kwargs.items():
+                if field_key in available_fields:
+                    issue_dict[field_key] = field_value
+                else:
+                    logger.warning(f"Field '{field_key}' not available for issue type '{issue_type}' in project '{project_key}', skipping")
 
             new_issue = self._client.create_issue(fields=issue_dict)
             logger.info(f"Created issue: {new_issue.key}")
             return self._format_issue(new_issue)
+            
+        except ValueError as e:
+            # Re-raise validation errors as-is
+            logger.error(f"Validation error creating issue: {e}")
+            raise
         except JIRAError as e:
             logger.error(f"Failed to create issue: {e}")
+            
+            # Parse the error for better user feedback
+            parsed_error = self._parse_jira_error(e)
+            
+            # Provide helpful suggestions based on error type
+            suggestions = []
+            
+            if "issue type" in parsed_error.lower():
+                valid_issue_types = self.get_issue_types(project_key)
+                valid_type_names = [it['name'] for it in valid_issue_types]
+                suggestions.append(f"Valid issue types for project '{project_key}': {', '.join(valid_type_names)}")
+            
+            if "priority" in parsed_error.lower():
+                if "cannot be set" in parsed_error.lower():
+                    suggestions.append(f"Priority field is not available for issue type '{issue_type}' in project '{project_key}'")
+                    suggestions.append("Try creating the issue without the --priority flag, or use a different issue type")
+                else:
+                    priorities = self.get_priorities()
+                    valid_priorities = [p['name'] for p in priorities]
+                    suggestions.append(f"Valid priorities: {', '.join(valid_priorities)}")
+            
+            if "assignee" in parsed_error.lower():
+                if "cannot be set" in parsed_error.lower():
+                    suggestions.append(f"Assignee field is not available for issue type '{issue_type}' in project '{project_key}'")
+                    suggestions.append("Try creating the issue without the --assignee flag")
+            
+            # Create comprehensive error message
+            error_message = f"JIRA Error: {parsed_error}"
+            if suggestions:
+                error_message += f"\n\nSuggestions:\n• " + "\n• ".join(suggestions)
+            
+            raise JIRAError(error_message)
+            
+        except Exception as e:
+            logger.error(f"Unexpected error creating issue: {e}")
             return None
 
     def update_issue(self, issue_key: str, **fields) -> bool:

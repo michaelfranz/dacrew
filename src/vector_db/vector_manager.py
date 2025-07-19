@@ -410,17 +410,16 @@ class VectorManager:
                 # Programming languages
                 '*.py', '*.java', '*.kt', '*.kts',  # Python, Java, Kotlin
                 '*.js', '*.ts', '*.jsx', '*.tsx',   # JavaScript/TypeScript
+                '*.txt',   # All text files
 
                 # Configuration files
                 '*.xml', '*.json', '*.yaml', '*.yml',  # Config formats
-                'requirements.txt', # Python library dependencies
                 '*.toml', '*.ini', '*.conf', '*.cfg',  # More config formats
                 '*.properties', '*.env',  # Properties and environment files
 
                 # Build and project files
                 '*.gradle', '*.gradle.kts',  # Gradle files
                 '*.pom.xml', 'build.gradle*',  # Maven and Gradle
-                'CMakeLists.txt', 'Makefile', 'makefile',  # Build systems
                 'Dockerfile', 'docker-compose.yml',  # Docker
 
                 # Web technologies

@@ -410,9 +410,6 @@ class VectorManager:
                 # Programming languages
                 '*.py', '*.java', '*.kt', '*.kts',  # Python, Java, Kotlin
                 '*.js', '*.ts', '*.jsx', '*.tsx',   # JavaScript/TypeScript
-                '*.go', '*.rs', '*.cpp', '*.c', '*.h', '*.hpp',  # Go, Rust, C/C++
-                '*.cs', '*.vb',  # C#, VB.NET
-                '*.php', '*.rb', '*.scala',  # PHP, Ruby, Scala
 
                 # Configuration files
                 '*.xml', '*.json', '*.yaml', '*.yml',  # Config formats

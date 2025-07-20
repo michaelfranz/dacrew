@@ -1,4 +1,4 @@
-"""Main entry point for JIRA AI Assistant"""
+"""Main entry point for DaCrew - AI-powered Development Crew"""
 
 import sys
 from pathlib import Path

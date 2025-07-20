@@ -25,7 +25,7 @@ numpy==1.26.4
 python-dotenv==1.0.0
 
 # CLI and UI
-click==8.1.7
+click==8.1.8
 rich==13.7.1
 typer==0.12.3
 

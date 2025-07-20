@@ -1,41 +1,81 @@
-"""Vector Database Manager for JIRA AI Assistant"""
+"""Vector database management with flexible configuration"""
+
 import fnmatch
 import logging
-import warnings
+from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, List, Optional, Union
 
 import chromadb
-from chromadb.config import Settings
-
-# Suppress specific warnings
-warnings.filterwarnings("ignore", category=FutureWarning, module="huggingface_hub")
-
-from sentence_transformers import SentenceTransformer
 import numpy as np
-
-from ..config import Config
-from ..jira_client import JIRAClient
+from chromadb.config import Settings
+from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger(__name__)
 
 
-class VectorManager:
-    """Manages vector embeddings and semantic search for JIRA issues"""
+class VectorDBConfig:
+    """Configuration for vector database operations"""
 
-    def __init__(self, config: Config):
+    def __init__(self,
+                 db_path: Optional[str] = None,
+                 embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
+                 **kwargs):
+        self.db_path = db_path
+        self.embedding_model = embedding_model
+        self.extra_config = kwargs
+
+
+class VectorManager:
+    """
+    Flexible vector database manager supporting both JIRA issues and codebase chunks
+
+    This manager can be configured with:
+    - Custom database paths (for workspace-specific embeddings)
+    - Different embedding models
+    - Collection-specific operations
+    """
+
+    def __init__(self,
+                 config: Optional[Union['Config', VectorDBConfig]] = None,
+                 db_path: Optional[str] = None,
+                 embedding_model: Optional[str] = None):
+        """
+        Initialize VectorManager with flexible configuration
+
+        Args:
+            config: Legacy Config object or VectorDBConfig object
+            db_path: Override database path (for workspace-specific embeddings)
+            embedding_model: Override embedding model
+        """
         self.config = config
         self.client = None
-        self.collection = None
-        self.codebase_collection = None
         self.embedding_model = None
+
+        # Determine configuration values
+        self._setup_config(config, db_path, embedding_model)
+
+        # Initialize components
         self._initialize_components()
 
+    def _setup_config(self, config, db_path, embedding_model):
+        """Setup configuration from various sources"""
+        # Handle different config types
+        if hasattr(config, 'ai'):  # Legacy Config object
+            self.db_path = db_path or config.ai.chroma_persist_directory
+            self.embedding_model_name = embedding_model or config.ai.embeddings_model
+        elif isinstance(config, VectorDBConfig):  # New config type
+            self.db_path = db_path or config.db_path or "data/vectordb"
+            self.embedding_model_name = embedding_model or config.embedding_model
+        else:  # No config or basic parameters
+            self.db_path = db_path or "data/vectordb"
+            self.embedding_model_name = embedding_model or "sentence-transformers/all-MiniLM-L6-v2"
+
     def _initialize_components(self):
-        """Initialize ChromaDB and embedding model"""
+        """Initialize ChromaDB client and embedding model"""
         try:
             # Initialize ChromaDB
-            persist_dir = Path(self.config.ai.chroma_persist_directory)
+            persist_dir = Path(self.db_path)
             persist_dir.mkdir(parents=True, exist_ok=True)
 
             self.client = chromadb.PersistentClient(
@@ -46,38 +86,48 @@ class VectorManager:
                 )
             )
 
-            # Initialize or get JIRA issues collection
-            collection_name = "jira_issues"
-            try:
-                self.collection = self.client.get_collection(collection_name)
-                logger.info(f"Connected to existing collection: {collection_name}")
-            except:
-                self.collection = self.client.create_collection(
-                    name=collection_name,
-                    metadata={"hnsw:space": "cosine"}
-                )
-                logger.info(f"Created new collection: {collection_name}")
-
-            # Initialize or get codebase collection
-            codebase_collection_name = "codebase"
-            try:
-                self.codebase_collection = self.client.get_collection(codebase_collection_name)
-                logger.info(f"Connected to existing codebase collection: {codebase_collection_name}")
-
-            except:
-                self.codebase_collection = self.client.create_collection(
-                    name=codebase_collection_name,
-                    metadata={"hnsw:space": "cosine"}
-                )
-                logger.info(f"Created new codebase collection: {codebase_collection_name}")
-
             # Initialize embedding model
-            self.embedding_model = SentenceTransformer(self.config.ai.embeddings_model)
-            logger.info(f"Loaded embedding model: {self.config.ai.embeddings_model}")
+            self.embedding_model = SentenceTransformer(self.embedding_model_name)
+            logger.info(f"VectorManager initialized - DB: {persist_dir}, Model: {self.embedding_model_name}")
 
         except Exception as e:
             logger.error(f"Failed to initialize vector components: {e}")
             raise
+
+    def get_or_create_collection(self, collection_name: str,
+                                 metadata: Optional[Dict[str, Any]] = None) -> 'Collection':
+        """Get existing collection or create new one"""
+        try:
+            collection = self.client.get_collection(collection_name)
+            logger.debug(f"Connected to existing collection: {collection_name}")
+        except:
+            collection_metadata = metadata or {"hnsw:space": "cosine"}
+            collection = self.client.create_collection(
+                name=collection_name,
+                metadata=collection_metadata
+            )
+            logger.info(f"Created new collection: {collection_name}")
+
+        return collection
+
+    def delete_collection(self, collection_name: str) -> bool:
+        """Delete a collection"""
+        try:
+            self.client.delete_collection(collection_name)
+            logger.info(f"Deleted collection: {collection_name}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete collection {collection_name}: {e}")
+            return False
+
+    def list_collections(self) -> List[str]:
+        """List all collections in the database"""
+        try:
+            collections = self.client.list_collections()
+            return [col.name for col in collections]
+        except Exception as e:
+            logger.error(f"Failed to list collections: {e}")
+            return []
 
     def generate_embeddings(self, texts: List[str]) -> np.ndarray:
         """Generate embeddings for a list of texts"""
@@ -88,14 +138,129 @@ class VectorManager:
             logger.error(f"Failed to generate embeddings: {e}")
             raise
 
-    def add_issue_to_vector_db(self, issue: Dict[str, Any]) -> bool:
+    # ============================================================================
+    # Generic Collection Operations
+    # ============================================================================
+
+    def add_documents(self, collection_name: str, documents: List[str],
+                      metadatas: List[Dict[str, Any]], ids: List[str],
+                      embeddings: Optional[List[List[float]]] = None) -> bool:
+        """Add documents to a collection"""
+        try:
+            collection = self.get_or_create_collection(collection_name)
+
+            # Generate embeddings if not provided
+            if embeddings is None:
+                embeddings = self.generate_embeddings(documents).tolist()
+
+            collection.add(
+                embeddings=embeddings,
+                documents=documents,
+                metadatas=metadatas,
+                ids=ids
+            )
+
+            logger.debug(f"Added {len(documents)} documents to collection {collection_name}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to add documents to {collection_name}: {e}")
+            return False
+
+    def search_collection(self, collection_name: str, query: str,
+                          n_results: int = 10,
+                          where: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Search in a specific collection"""
+        try:
+            collection = self.get_or_create_collection(collection_name)
+
+            # Generate embedding for query
+            query_embedding = self.generate_embeddings([query])[0]
+
+            # Search in collection
+            results = collection.query(
+                query_embeddings=[query_embedding.tolist()],
+                n_results=n_results,
+                where=where,
+                include=["documents", "metadatas", "distances"]
+            )
+
+            # Format results
+            formatted_results = []
+            if results['ids'] and results['ids'][0]:
+                for i, doc_id in enumerate(results['ids'][0]):
+                    result = {
+                        "id": doc_id,
+                        "similarity_score": 1 - results['distances'][0][i],
+                        "document": results['documents'][0][i],
+                        "metadata": results['metadatas'][0][i]
+                    }
+                    formatted_results.append(result)
+
+            logger.debug(f"Collection {collection_name} search returned {len(formatted_results)} results")
+            return formatted_results
+
+        except Exception as e:
+            logger.error(f"Failed to search collection {collection_name}: {e}")
+            return []
+
+    def update_documents(self, collection_name: str, ids: List[str],
+                         documents: Optional[List[str]] = None,
+                         metadatas: Optional[List[Dict[str, Any]]] = None,
+                         embeddings: Optional[List[List[float]]] = None) -> bool:
+        """Update documents in a collection"""
+        try:
+            collection = self.get_or_create_collection(collection_name)
+
+            # Generate embeddings if documents provided but embeddings not
+            if documents and embeddings is None:
+                embeddings = self.generate_embeddings(documents).tolist()
+
+            collection.update(
+                ids=ids,
+                documents=documents,
+                metadatas=metadatas,
+                embeddings=embeddings
+            )
+
+            logger.debug(f"Updated {len(ids)} documents in collection {collection_name}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to update documents in {collection_name}: {e}")
+            return False
+
+    def delete_documents(self, collection_name: str, ids: List[str]) -> bool:
+        """Delete documents from a collection"""
+        try:
+            collection = self.get_or_create_collection(collection_name)
+            collection.delete(ids=ids)
+            logger.debug(f"Deleted {len(ids)} documents from collection {collection_name}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to delete documents from {collection_name}: {e}")
+            return False
+
+    def get_collection_count(self, collection_name: str) -> int:
+        """Get count of documents in a collection"""
+        try:
+            collection = self.get_or_create_collection(collection_name)
+            return collection.count()
+        except Exception as e:
+            logger.error(f"Failed to get count for collection {collection_name}: {e}")
+            return 0
+
+    # ============================================================================
+    # JIRA-Specific Operations (for backward compatibility)
+    # ============================================================================
+
+    def add_issue_to_vector_db(self, issue: Dict[str, Any],
+                               collection_name: str = "jira_issues") -> bool:
         """Add a JIRA issue to the vector database"""
         try:
             # Create searchable text from issue
             searchable_text = self._create_searchable_text(issue)
-
-            # Generate embedding
-            embedding = self.generate_embeddings([searchable_text])[0]
 
             # Prepare metadata
             metadata = {
@@ -108,32 +273,29 @@ class VectorManager:
                 "issue_type": issue["issue_type"],
                 "created": issue["created"],
                 "updated": issue["updated"],
-                "url": issue["url"]
+                "url": issue["url"],
+                "document_type": "jira_issue"
             }
 
-            # Add to collection
-            self.collection.add(
-                embeddings=[embedding.tolist()],
+            return self.add_documents(
+                collection_name=collection_name,
                 documents=[searchable_text],
                 metadatas=[metadata],
                 ids=[issue["key"]]
             )
 
-            logger.debug(f"Added issue {issue['key']} to vector database")
-            return True
-
         except Exception as e:
-            logger.error(f"Failed to add issue {issue.get('key', 'unknown')} to vector database: {e}")
+            logger.error(f"Failed to add issue {issue.get('key', 'unknown')}: {e}")
             return False
 
-    def add_issues_batch(self, issues: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def add_issues_batch(self, issues: List[Dict[str, Any]],
+                         collection_name: str = "jira_issues") -> Dict[str, Any]:
         """Add multiple issues to the vector database in batch"""
         try:
             if not issues:
                 return {"success": True, "added": 0, "failed": 0}
 
             # Prepare batch data
-            embeddings = []
             documents = []
             metadatas = []
             ids = []
@@ -154,7 +316,8 @@ class VectorManager:
                         "issue_type": issue["issue_type"],
                         "created": issue["created"],
                         "updated": issue["updated"],
-                        "url": issue["url"]
+                        "url": issue["url"],
+                        "document_type": "jira_issue"
                     }
 
                     documents.append(searchable_text)
@@ -168,193 +331,399 @@ class VectorManager:
             if not documents:
                 return {"success": True, "added": 0, "failed": len(issues)}
 
-            # Generate embeddings for all documents
-            embeddings = self.generate_embeddings(documents)
-
             # Add to collection
-            self.collection.add(
-                embeddings=embeddings.tolist(),
+            success = self.add_documents(
+                collection_name=collection_name,
                 documents=documents,
                 metadatas=metadatas,
                 ids=ids
             )
 
-            logger.info(f"Added {len(documents)} issues to vector database")
-            return {
-                "success": True,
-                "added": len(documents),
-                "failed": len(issues) - len(documents)
-            }
+            if success:
+                logger.info(f"Added {len(documents)} issues to vector database")
+                return {
+                    "success": True,
+                    "added": len(documents),
+                    "failed": len(issues) - len(documents)
+                }
+            else:
+                return {"success": False, "error": "Batch add failed", "added": 0, "failed": len(issues)}
 
         except Exception as e:
             logger.error(f"Failed to add issues batch: {e}")
             return {"success": False, "error": str(e), "added": 0, "failed": len(issues)}
 
     def semantic_search(self, query: str, n_results: int = 10,
-                        filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+                        filters: Optional[Dict[str, Any]] = None,
+                        collection_name: str = "jira_issues") -> List[Dict[str, Any]]:
         """Perform semantic search on JIRA issues"""
         try:
-            # Generate embedding for query
-            query_embedding = self.generate_embeddings([query])[0]
-
-            # Prepare where clause for filtering
-            where_clause = {}
+            # Build where clause
+            where_clause = {"document_type": "jira_issue"}
             if filters:
                 for key, value in filters.items():
                     if value:
                         where_clause[key] = value
 
-            # Search in collection
-            results = self.collection.query(
-                query_embeddings=[query_embedding.tolist()],
+            results = self.search_collection(
+                collection_name=collection_name,
+                query=query,
                 n_results=n_results,
-                where=where_clause if where_clause else None,
-                include=["documents", "metadatas", "distances"]
+                where=where_clause
             )
 
-            # Format results
-            formatted_results = []
-            if results['ids'] and results['ids'][0]:
-                for i, issue_id in enumerate(results['ids'][0]):
-                    result = {
-                        "issue_key": issue_id,
-                        "similarity_score": 1 - results['distances'][0][i],  # Convert distance to similarity
-                        "document": results['documents'][0][i],
-                        "metadata": results['metadatas'][0][i]
-                    }
-                    formatted_results.append(result)
+            # Reformat for JIRA compatibility
+            jira_results = []
+            for result in results:
+                jira_result = {
+                    "issue_key": result["id"],
+                    "similarity_score": result["similarity_score"],
+                    "document": result["document"],
+                    "metadata": result["metadata"]
+                }
+                jira_results.append(jira_result)
 
-            logger.info(f"Semantic search returned {len(formatted_results)} results for query: {query}")
-            return formatted_results
+            return jira_results
 
         except Exception as e:
             logger.error(f"Failed to perform semantic search: {e}")
             return []
 
-    def search_codebase(self, query: str, n_results: int = 10,
-                       file_types: Optional[List[str]] = None) -> List[Dict[str, Any]]:
-        """Perform semantic search on codebase"""
+    # ============================================================================
+    # Codebase Operations
+    # ============================================================================
+
+    def index_codebase(self, codebase_path: str, collection_name: str,
+                       file_patterns: Optional[List[str]] = None,
+                       exclude_patterns: Optional[List[str]] = None,
+                       force_rebuild: bool = False,
+                       chunk_size: int = 1000,
+                       chunk_overlap: int = 200) -> Dict[str, Any]:
+        """
+        Index codebase files into vector database
+
+        Args:
+            codebase_path: Path to the codebase
+            collection_name: Name of the collection to store embeddings
+            file_patterns: File patterns to include (default: common code files)
+            exclude_patterns: Patterns to exclude (default: common ignore patterns)
+            force_rebuild: Whether to rebuild the entire collection
+            chunk_size: Size of text chunks
+            chunk_overlap: Overlap between chunks
+
+        Returns:
+            Statistics about the indexing operation
+        """
+        if file_patterns is None:
+            file_patterns = [
+                # Programming languages
+                '*.py', '*.java', '*.kt', '*.kts',
+                '*.js', '*.ts', '*.jsx', '*.tsx',
+                '*.c', '*.cpp', '*.h', '*.hpp',
+                '*.cs', '*.php', '*.rb', '*.go',
+                '*.rust', '*.scala', '*.clj',
+
+                # Configuration and data files
+                '*.xml', '*.json', '*.yaml', '*.yml',
+                '*.toml', '*.ini', '*.conf', '*.cfg',
+                '*.properties', '*.env',
+
+                # Build files
+                '*.gradle', '*.gradle.kts', 'pom.xml',
+                'Dockerfile', 'docker-compose.yml',
+                'package.json', 'requirements.txt',
+
+                # Web files
+                '*.html', '*.css', '*.scss', '*.less',
+                '*.vue', '*.svelte',
+
+                # Database
+                '*.sql',
+
+                # Documentation
+                '*.md', '*.rst', '*.txt'
+            ]
+
+        if exclude_patterns is None:
+            exclude_patterns = [
+                # Build artifacts and dependencies
+                '*/node_modules/*', '*/__pycache__/*', '*/venv/*', '*/env/*',
+                '*/build/*', '*/dist/*', '*/target/*', '*/out/*',
+                '*/bin/*', '*/obj/*', '*/.gradle/*',
+
+                # Version control and IDE
+                '*/.git/*', '*/.svn/*', '*/.hg/*',
+                '*/.idea/*', '*/.vscode/*', '*/.eclipse/*',
+                '*.iml', '*.iws', '*.ipr',
+
+                # Temporary and cache
+                '*/tmp/*', '*/temp/*', '*/.cache/*', '*/cache/*',
+                '*.log', '*.tmp', '*.swp', '*~',
+
+                # Generated files
+                '*/generated/*', '*/gen/*',
+
+                # Binary files
+                '*.jar', '*.war', '*.ear', '*.zip', '*.tar.gz',
+                '*.pdf', '*.doc', '*.docx', '*.xls', '*.xlsx',
+                '*.png', '*.jpg', '*.jpeg', '*.gif', '*.svg', '*.ico'
+            ]
+
         try:
-            # Generate embedding for query
-            query_embedding = self.generate_embeddings([query])[0]
+            start_time = datetime.now()
+            codebase_root = Path(codebase_path)
 
-            # Prepare where clause for filtering by file types
-            where_clause = {}
-            if file_types:
-                where_clause["chunk_type"] = {"$in": file_types}
+            if not codebase_root.exists():
+                raise ValueError(f"Codebase path does not exist: {codebase_path}")
 
-            # Search in codebase collection
-            results = self.codebase_collection.query(
-                query_embeddings=[query_embedding.tolist()],
-                n_results=n_results,
-                where=where_clause if where_clause else None,
-                include=["documents", "metadatas", "distances"]
-            )
+            # Clear collection if force rebuild
+            if force_rebuild:
+                self.delete_collection(collection_name)
 
-            # Format results
-            formatted_results = []
-            if results['ids'] and results['ids'][0]:
-                for i, chunk_id in enumerate(results['ids'][0]):
-                    result = {
-                        "chunk_id": chunk_id,
-                        "similarity_score": 1 - results['distances'][0][i],
-                        "content": results['documents'][0][i],
-                        "metadata": results['metadatas'][0][i]
-                    }
-                    formatted_results.append(result)
+            collection = self.get_or_create_collection(collection_name)
 
-            logger.info(f"Codebase search returned {len(formatted_results)} results for query: {query}")
-            return formatted_results
+            files_processed = 0
+            chunks_created = 0
+            file_types = set()
+            errors = []
 
-        except Exception as e:
-            logger.error(f"Failed to perform codebase search: {e}")
-            return []
+            # Process files
+            for file_path in codebase_root.rglob('*'):
+                if not file_path.is_file():
+                    continue
 
-    def update_issue_in_vector_db(self, issue: Dict[str, Any]) -> bool:
-        """Update an issue in the vector database"""
-        try:
-            # First, try to delete the existing entry
-            try:
-                self.collection.delete(ids=[issue["key"]])
-            except:
-                pass  # Issue might not exist in vector DB
+                # Convert to relative path for pattern matching
+                relative_path = str(file_path.relative_to(codebase_root))
 
-            # Add the updated issue
-            return self.add_issue_to_vector_db(issue)
+                # Check exclude patterns first
+                if any(fnmatch.fnmatch(relative_path, pattern) or
+                       fnmatch.fnmatch(str(file_path), pattern)
+                       for pattern in exclude_patterns):
+                    continue
 
-        except Exception as e:
-            logger.error(f"Failed to update issue {issue.get('key', 'unknown')} in vector database: {e}")
-            return False
+                # Check include patterns
+                if not any(fnmatch.fnmatch(file_path.name, pattern)
+                           for pattern in file_patterns):
+                    continue
 
-    def delete_issue_from_vector_db(self, issue_key: str) -> bool:
-        """Delete an issue from the vector database"""
-        try:
-            self.collection.delete(ids=[issue_key])
-            logger.info(f"Deleted issue {issue_key} from vector database")
-            return True
+                try:
+                    # Read file content
+                    content = self._read_file_safely(file_path)
+                    if not content or len(content.strip()) == 0:
+                        continue
 
-        except Exception as e:
-            logger.error(f"Failed to delete issue {issue_key} from vector database: {e}")
-            return False
+                    # Create chunks
+                    chunks = self._create_code_chunks(
+                        content, file_path, chunk_size, chunk_overlap
+                    )
 
-    def sync_with_jira(self, jira_client: JIRAClient, project_key: str = None,
-                       force_refresh: bool = False) -> Dict[str, Any]:
-        """Sync vector database with JIRA issues"""
-        try:
-            logger.info("Starting JIRA sync with vector database")
+                    if chunks:
+                        file_extension = file_path.suffix or 'no_extension'
+                        file_types.add(file_extension)
 
-            # Build JQL for syncing
-            if project_key:
-                jql = f"project = {project_key}"
-            else:
-                jql = "ORDER BY updated DESC"
+                        # Add chunks to collection
+                        documents = [chunk['content'] for chunk in chunks]
+                        metadatas = [chunk['metadata'] for chunk in chunks]
+                        ids = [chunk['id'] for chunk in chunks]
 
-            # If not force refresh, only sync recent updates
-            if not force_refresh:
-                # Get last sync time from collection metadata
-                last_sync = self._get_last_sync_time()
-                if last_sync:
-                    jql += f" AND updated >= '{last_sync}'"
+                        success = self.add_documents(
+                            collection_name=collection_name,
+                            documents=documents,
+                            metadatas=metadatas,
+                            ids=ids
+                        )
 
-            # Get issues from JIRA
-            issues = jira_client.search_issues(jql, max_results=1000)
+                        if success:
+                            files_processed += 1
+                            chunks_created += len(chunks)
+                        else:
+                            errors.append(f"Failed to add chunks for {relative_path}")
 
-            if not issues:
-                logger.info("No issues to sync")
-                return {"success": True, "synced": 0}
+                except Exception as e:
+                    error_msg = f"Error processing {relative_path}: {str(e)}"
+                    errors.append(error_msg)
+                    logger.warning(error_msg)
+                    continue
 
-            # Add/update issues in vector database
-            result = self.add_issues_batch(issues)
+            # Calculate duration
+            duration = (datetime.now() - start_time).total_seconds()
 
-            # Update last sync time
-            self._update_last_sync_time()
-
-            logger.info(f"Sync completed: {result}")
-            return result
-
-        except Exception as e:
-            logger.error(f"Failed to sync with JIRA: {e}")
-            return {"success": False, "error": str(e)}
-
-    def get_collection_stats(self) -> Dict[str, Any]:
-        """Get statistics about the vector database collections"""
-        try:
-            jira_count = self.collection.count()
-            codebase_count = self.codebase_collection.count()
-
-            return {
-                "jira_issues": jira_count,
-                "codebase_chunks": codebase_count,
-                "collection_names": {
-                    "jira": self.collection.name,
-                    "codebase": self.codebase_collection.name
-                },
-                "embedding_model": self.config.ai.embeddings_model
+            # Return statistics
+            stats = {
+                "total_files": files_processed,
+                "total_chunks": chunks_created,
+                "file_types": sorted(list(file_types)),
+                "duration": duration,
+                "errors": errors[:10],  # Limit errors shown
+                "collection_name": collection_name,
+                "codebase_path": str(codebase_root)
             }
 
+            logger.info(f"Codebase indexing completed: {stats}")
+            return stats
+
         except Exception as e:
-            logger.error(f"Failed to get collection stats: {e}")
-            return {"error": str(e)}
+            error_msg = f"Failed to index codebase: {str(e)}"
+            logger.error(error_msg)
+            return {
+                "error": error_msg,
+                "total_files": 0,
+                "total_chunks": 0,
+                "file_types": [],
+                "duration": 0
+            }
+
+    def search_codebase(self, query: str, collection_name: str,
+                        n_results: int = 10,
+                        file_types: Optional[List[str]] = None,
+                        file_paths: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        """Search codebase embeddings"""
+        try:
+            # Build where clause
+            where_clause = {"document_type": "code_chunk"}
+
+            if file_types:
+                where_clause["file_type"] = {"$in": file_types}
+
+            if file_paths:
+                where_clause["file_path"] = {"$in": file_paths}
+
+            results = self.search_collection(
+                collection_name=collection_name,
+                query=query,
+                n_results=n_results,
+                where=where_clause
+            )
+
+            # Reformat for codebase compatibility
+            codebase_results = []
+            for result in results:
+                codebase_result = {
+                    "chunk_id": result["id"],
+                    "similarity_score": result["similarity_score"],
+                    "content": result["document"],
+                    "metadata": result["metadata"]
+                }
+                codebase_results.append(codebase_result)
+
+            return codebase_results
+
+        except Exception as e:
+            logger.error(f"Failed to search codebase: {e}")
+            return []
+
+    # ============================================================================
+    # Utility Methods
+    # ============================================================================
+
+    def _read_file_safely(self, file_path: Path) -> Optional[str]:
+        """Safely read file content with encoding detection"""
+        encodings = ['utf-8', 'utf-16', 'latin-1', 'cp1252']
+
+        for encoding in encodings:
+            try:
+                with open(file_path, 'r', encoding=encoding) as f:
+                    content = f.read()
+                    # Skip very large files (>1MB)
+                    if len(content) > 1_000_000:
+                        logger.debug(f"Skipping large file: {file_path}")
+                        return None
+                    return content
+            except (UnicodeDecodeError, UnicodeError):
+                continue
+            except Exception:
+                break
+
+        logger.warning(f"Could not read file: {file_path}")
+        return None
+
+    def _create_code_chunks(self, content: str, file_path: Path,
+                            chunk_size: int = 1000, overlap: int = 200) -> List[Dict[str, Any]]:
+        """Create chunks from code content"""
+        chunks = []
+
+        if len(content) <= chunk_size:
+            # Small file - single chunk
+            chunk = {
+                'id': f"{file_path.name}_chunk_0",
+                'content': content,
+                'metadata': {
+                    'file_path': str(file_path),
+                    'file_name': file_path.name,
+                    'file_type': file_path.suffix,
+                    'chunk_index': 0,
+                    'chunk_type': self._determine_chunk_type(file_path),
+                    'document_type': 'code_chunk',
+                    'size': len(content)
+                }
+            }
+            chunks.append(chunk)
+        else:
+            # Large file - multiple chunks
+            start = 0
+            chunk_index = 0
+
+            while start < len(content):
+                end = start + chunk_size
+                chunk_content = content[start:end]
+
+                # Try to break at line boundaries
+                if end < len(content):
+                    last_newline = chunk_content.rfind('\n')
+                    if last_newline > chunk_size * 0.5:  # Don't break too early
+                        chunk_content = chunk_content[:last_newline + 1]
+                        end = start + last_newline + 1
+
+                chunk = {
+                    'id': f"{file_path.name}_chunk_{chunk_index}",
+                    'content': chunk_content,
+                    'metadata': {
+                        'file_path': str(file_path),
+                        'file_name': file_path.name,
+                        'file_type': file_path.suffix,
+                        'chunk_index': chunk_index,
+                        'chunk_type': self._determine_chunk_type(file_path),
+                        'document_type': 'code_chunk',
+                        'size': len(chunk_content),
+                        'start_char': start,
+                        'end_char': end
+                    }
+                }
+                chunks.append(chunk)
+
+                # Move start position with overlap
+                start = max(start + chunk_size - overlap, end)
+                chunk_index += 1
+
+        return chunks
+
+    def _determine_chunk_type(self, file_path: Path) -> str:
+        """Determine the type of code chunk based on file extension"""
+        extension_map = {
+            '.py': 'python',
+            '.java': 'java',
+            '.kt': 'kotlin',
+            '.kts': 'kotlin-script',
+            '.js': 'javascript',
+            '.ts': 'typescript',
+            '.jsx': 'react',
+            '.tsx': 'react-typescript',
+            '.html': 'html',
+            '.css': 'css',
+            '.scss': 'scss',
+            '.xml': 'xml',
+            '.json': 'json',
+            '.yaml': 'yaml',
+            '.yml': 'yaml',
+            '.md': 'markdown',
+            '.sql': 'sql',
+            '.sh': 'shell',
+            '.dockerfile': 'docker',
+            '.gradle': 'gradle',
+            '.properties': 'properties'
+        }
+
+        return extension_map.get(file_path.suffix.lower(), 'text')
 
     def _create_searchable_text(self, issue: Dict[str, Any]) -> str:
         """Create searchable text from JIRA issue"""
@@ -383,299 +752,33 @@ class VectorManager:
 
         return "\n".join(text_parts)
 
-    def _get_last_sync_time(self) -> Optional[str]:
-        """Get the last sync time from collection metadata"""
+    def get_database_stats(self) -> Dict[str, Any]:
+        """Get comprehensive database statistics"""
         try:
-            # This is a simplified approach - in a real implementation,
-            # you might want to store this in a separate metadata collection
-            return None
-        except:
-            return None
+            collections = self.list_collections()
 
-    def _update_last_sync_time(self):
-        """Update the last sync time"""
-        try:
-            # This is a simplified approach - in a real implementation,
-            # you might want to store this in a separate metadata collection
-            pass
-        except:
-            pass
-
-    def index_codebase(self, codebase_path: str,
-                      file_patterns: List[str] = None,
-                      exclude_patterns: List[str] = None) -> Dict[str, Any]:
-        """Index codebase files into vector database"""
-        if file_patterns is None:
-            file_patterns = [
-                # Programming languages
-                '*.py', '*.java', '*.kt', '*.kts',  # Python, Java, Kotlin
-                '*.js', '*.ts', '*.jsx', '*.tsx',   # JavaScript/TypeScript
-                '*.txt',   # All text files
-
-                # Configuration files
-                '*.xml', '*.json', '*.yaml', '*.yml',  # Config formats
-                '*.toml', '*.ini', '*.conf', '*.cfg',  # More config formats
-                '*.properties', '*.env',  # Properties and environment files
-
-                # Build and project files
-                '*.gradle', '*.gradle.kts',  # Gradle files
-                '*.pom.xml', 'build.gradle*',  # Maven and Gradle
-                'Dockerfile', 'docker-compose.yml',  # Docker
-
-                # Web technologies
-                '*.html', '*.css', '*.scss', '*.less',  # Web frontend
-                '*.vue', '*.svelte', '*.angular.ts',  # Frontend frameworks
-
-                # Database and ORM
-                '*.sql', '*.hbm.xml',  # SQL and Hibernate mapping files
-
-                # Documentation that might contain code
-                '*.md', '*.rst',  # Markdown and reStructuredText with code blocks
-            ]
-
-        if exclude_patterns is None:
-            exclude_patterns = [
-                # Dependencies and build artifacts
-                '*/node_modules/*', '*/__pycache__/*', '*/venv/*', '*/env/*',
-                '*/.git/*', '*/.svn/*', '*/.hg/*',  # Version control
-                '*/build/*', '*/dist/*', '*/target/*', '*/out/*',  # Build outputs
-                '*/bin/*', '*/obj/*', '*/.gradle/*',  # More build artifacts
-
-                # IDE and editor files
-                '*/.idea/*', '*/.vscode/*', '*/.eclipse/*',
-                '*.iml', '*.iws', '*.ipr',  # IntelliJ files
-
-                # Temporary and cache files
-                '*/tmp/*', '*/temp/*', '*/.cache/*', '*/cache/*',
-                '*.log', '*.tmp', '*.swp', '*~',  # Temporary files
-
-                # Generated files
-                '*/generated/*', '*/gen/*', '**/generated/**',
-
-                # Large data files that shouldn't be indexed
-                '*.jar', '*.war', '*.ear', '*.zip', '*.tar.gz',  # Archives
-                '*.pdf', '*.doc', '*.docx', '*.xls', '*.xlsx',  # Binary docs
-                '*.png', '*.jpg', '*.jpeg', '*.gif', '*.svg', '*.ico',  # Images
-            ]
-
-        try:
-            codebase_root = Path(codebase_path)
-            if not codebase_root.exists():
-                raise ValueError(f"Codebase path does not exist: {codebase_path}")
-
-            files_processed = 0
-            chunks_created = 0
-
-            # Clear existing codebase data
-            try:
-                self.codebase_collection.delete()
-                self.codebase_collection = self.client.create_collection(
-                    name="codebase",
-                    metadata={"hnsw:space": "cosine"}
-                )
-            except:
-                pass
-
-            # Walk through codebase
-            for file_path in codebase_root.rglob('*'):
-                if not file_path.is_file():
-                    continue
-
-                # Check if file matches include patterns
-                if not any(fnmatch.fnmatch(str(file_path), pattern) for pattern in file_patterns):
-                    continue
-
-                # Check if file matches exclude patterns
-                if any(fnmatch.fnmatch(str(file_path), pattern) for pattern in exclude_patterns):
-                    continue
-
-                try:
-                    # Read file content
-                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                        content = f.read()
-
-                    if not content.strip():
-                        continue
-
-                    # Create chunks from file content with file type awareness
-                    chunks = self._create_code_chunks(content, str(file_path))
-
-                    # Add chunks to vector database
-                    if chunks:
-                        self._add_code_chunks(chunks)
-                        chunks_created += len(chunks)
-
-                    files_processed += 1
-
-                    if files_processed % 10 == 0:
-                        logger.info(f"Processed {files_processed} files, created {chunks_created} chunks")
-
-                except Exception as e:
-                    logger.warning(f"Failed to process file {file_path}: {e}")
-                    continue
-
-            logger.info(f"Codebase indexing completed: {files_processed} files, {chunks_created} chunks")
-            return {
-                "success": True,
-                "files_processed": files_processed,
-                "chunks_created": chunks_created
+            stats = {
+                "database_path": self.db_path,
+                "embedding_model": self.embedding_model_name,
+                "total_collections": len(collections),
+                "collections": {}
             }
 
-        except Exception as e:
-            logger.error(f"Failed to index codebase: {e}")
-            return {"success": False, "error": str(e)}
+            # Get stats for each collection
+            for collection_name in collections:
+                try:
+                    count = self.get_collection_count(collection_name)
+                    stats["collections"][collection_name] = {
+                        "document_count": count
+                    }
+                except:
+                    stats["collections"][collection_name] = {
+                        "document_count": 0,
+                        "error": "Could not get count"
+                    }
 
-    def _create_code_chunks(self, content: str, file_path: str) -> List[Dict[str, Any]]:
-        """Create semantic chunks from code content with file type awareness"""
-        chunks = []
-        lines = content.split('\n')
-        file_extension = Path(file_path).suffix.lower()
-
-        # File type specific chunking strategies
-        current_chunk = []
-        current_line_start = 1
-        chunk_size_limit = 50  # Default chunk size
-
-        # Adjust chunking based on file type
-        if file_extension in ['.xml', '.html']:
-            chunk_size_limit = 30  # Smaller chunks for XML/HTML due to verbosity
-        elif file_extension in ['.json', '.yaml', '.yml']:
-            chunk_size_limit = 20  # Even smaller for config files
-        elif file_extension in ['.md', '.rst']:
-            chunk_size_limit = 100  # Larger chunks for documentation
-
-        for i, line in enumerate(lines):
-            current_chunk.append(line)
-
-            # Create chunk based on file type and content structure
-            should_chunk = False
-
-            if file_extension in ['.py']:
-                # Python-specific chunking
-                should_chunk = (len(current_chunk) >= chunk_size_limit or
-                                line.strip().startswith('def ') or
-                                line.strip().startswith('class ') or
-                                line.strip().startswith('async def '))
-
-            elif file_extension in ['.java', '.kt', '.kts']:
-                # Java/Kotlin-specific chunking
-                should_chunk = (len(current_chunk) >= chunk_size_limit or
-                                line.strip().startswith('public class ') or
-                                line.strip().startswith('class ') or
-                                line.strip().startswith('interface ') or
-                                line.strip().startswith('fun ') or  # Kotlin functions
-                                line.strip().startswith('private fun ') or
-                                line.strip().startswith('public fun '))
-
-            elif file_extension in ['.js', '.ts']:
-                # JavaScript/TypeScript-specific chunking
-                should_chunk = (len(current_chunk) >= chunk_size_limit or
-                                line.strip().startswith('function ') or
-                                line.strip().startswith('class ') or
-                                line.strip().startswith('const ') and '= (' in line or
-                                line.strip().startswith('export '))
-
-            elif file_extension in ['.xml']:
-                # XML-specific chunking (by major elements)
-                should_chunk = (len(current_chunk) >= chunk_size_limit or
-                                ('<hibernate-mapping' in line) or
-                                ('<entity' in line) or
-                                ('<configuration' in line) or
-                                ('</hibernate-mapping>' in line) or
-                                ('</configuration>' in line))
-
-            elif file_extension in ['.gradle', '.gradle.kts']:
-                # Gradle-specific chunking
-                should_chunk = (len(current_chunk) >= chunk_size_limit or
-                                line.strip().startswith('dependencies ') or
-                                line.strip().startswith('plugins ') or
-                                line.strip().startswith('android ') or
-                                line.strip().startswith('task '))
-
-            else:
-                # Generic chunking for other file types
-                should_chunk = (len(current_chunk) >= chunk_size_limit)
-
-            # Also chunk at end of file
-            if i == len(lines) - 1:
-                should_chunk = True
-
-            if should_chunk and current_chunk:
-                chunk_content = '\n'.join(current_chunk)
-                if chunk_content.strip():  # Only add non-empty chunks
-                    # Determine chunk type based on file extension
-                    chunk_type = self._determine_chunk_type(file_extension)
-
-                    chunks.append({
-                        'content': chunk_content,
-                        'metadata': {
-                            'file_path': file_path,
-                            'chunk_type': chunk_type,
-                            'file_extension': file_extension,
-                            'line_start': current_line_start,
-                            'line_end': i + 1
-                        }
-                    })
-
-                current_chunk = []
-                current_line_start = i + 2
-
-        return chunks
-
-    def _determine_chunk_type(self, file_extension: str) -> str:
-        """Determine the type of code chunk based on file extension"""
-        type_mapping = {
-            '.py': 'python',
-            '.java': 'java',
-            '.kt': 'kotlin',
-            '.kts': 'kotlin-script',
-            '.js': 'javascript',
-            '.ts': 'typescript',
-            '.xml': 'xml-config',
-            '.json': 'json-config',
-            '.yaml': 'yaml-config',
-            '.yml': 'yaml-config',
-            '.gradle': 'gradle-build',
-            '.gradle.kts': 'gradle-kotlin',
-            '.properties': 'properties-config',
-            '.sql': 'sql-query',
-            '.md': 'documentation',
-            '.rst': 'documentation'
-        }
-
-        return type_mapping.get(file_extension, 'code')
-
-    def _add_code_chunks(self, chunks: List[Dict[str, Any]]) -> None:
-        """Add code chunks to the codebase collection"""
-        try:
-            if not chunks:
-                return
-
-            # Prepare data for batch insertion
-            documents = []
-            metadatas = []
-            ids = []
-            
-            for chunk in chunks:
-                documents.append(chunk['content'])
-                metadatas.append(chunk['metadata'])
-                # Create unique ID for chunk
-                chunk_id = f"{chunk['metadata']['file_path']}:{chunk['metadata']['line_start']}-{chunk['metadata']['line_end']}"
-                ids.append(chunk_id)
-
-            # Generate embeddings for all chunks
-            embeddings = self.generate_embeddings(documents)
-
-            # Add to codebase collection
-            self.codebase_collection.add(
-                embeddings=embeddings.tolist(),
-                documents=documents,
-                metadatas=metadatas,
-                ids=ids
-            )
-
-            logger.debug(f"Added {len(chunks)} code chunks to vector database")
+            return stats
 
         except Exception as e:
-            logger.error(f"Failed to add code chunks: {e}")
-            raise
+            logger.error(f"Failed to get database stats: {e}")
+            return {"error": str(e)}

@@ -1,5 +1,13 @@
-"""JIRA AI Assistant - Natural Language Interface for JIRA"""
+"""Workflows Package - Orchestrated multi-step operations"""
 
-__version__ = "0.1.0"
-__author__ = "Mike Mannion"
-__email__ = "mike.mannion@karakun.com"
+# Placeholder for future workflow implementations
+# from .issue_workflow import IssueWorkflow
+# from .analysis_workflow import AnalysisWorkflow
+
+__all__ = [
+    # Workflows (to be implemented)
+    # 'IssueWorkflow',
+    # 'AnalysisWorkflow',
+]
+
+__version__ = "1.0.0"

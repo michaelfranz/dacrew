@@ -1,11 +1,12 @@
-"""Configuration management for JIRA AI Assistant"""
+"""Configuration management for DaCrew - AI-powered Development Crew"""
 
 import os
 from dataclasses import dataclass
-from typing import Optional
+from pathlib import Path
 
 from dotenv import load_dotenv
 
+# Load environment variables
 load_dotenv()
 
 
@@ -65,11 +66,21 @@ class Config:
     jira: JIRAConfig
     ai: AIConfig
     project: ProjectConfig
+    config_file: str = ".env"  # Add config file path for display
 
     @classmethod
     def load(cls) -> 'Config':
+        """Load configuration from environment variables"""
+        # Determine which .env file was loaded
+        env_file = ".env"
+        if not Path(env_file).exists():
+            env_file = ".env.example"
+        if not Path(env_file).exists():
+            env_file = "environment variables"
+
         return cls(
             jira=JIRAConfig.from_env(),
             ai=AIConfig.from_env(),
-            project=ProjectConfig.from_env()
+            project=ProjectConfig.from_env(),
+            config_file=env_file
         )

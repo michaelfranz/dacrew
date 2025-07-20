@@ -1,4 +1,4 @@
-"""Setup script for JIRA AI Assistant"""
+"""Setup script for DaCrew - AI-powered Development Crew"""
 
 from setuptools import setup, find_packages
 
@@ -6,11 +6,11 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="jira-ai-assistant",
+    name="dacrew",
     version="0.1.0",
     author="Your Name",
     author_email="your.email@example.com",
-    description="AI-powered natural language interface for JIRA",
+    description="AI-powered development crew - your team of software development assistants",
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=find_packages(),
@@ -38,7 +38,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "jira-ai=src.cli:app",
+            "dacrew=src.cli:app",
         ],
     },
 )

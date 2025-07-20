@@ -11,6 +11,7 @@ def create_directory_structure():
 
     directories = [
         'src/agents',
+        'src/codebase',
         'src/workflows',
         'src/utils',
         'src/web/templates',
@@ -59,6 +60,7 @@ def create_init_files():
     init_files = [
         'src/__init__.py',
         'src/agents/__init__.py',
+        'src/codebase/__init__.py',
         'src/workflows/__init__.py',
         'src/utils/__init__.py',
         'src/web/__init__.py',

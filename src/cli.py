@@ -927,7 +927,14 @@ def show_current_repository():
         info_table.add_row("Branch:", repo_info.get('branch', 'N/A'))
         info_table.add_row("Path:", repo_info['actual_path'])
         info_table.add_row("Added:", repo_info.get('cloned_at', 'N/A'))
-        info_table.add_row("Exists:", "✅ Yes" if repo_info.get('exists', False) else "❌ No")
+
+        from pathlib import Path
+        repo_path = Path(repo_info['actual_path'])
+        if not repo_path.is_absolute():
+            repo_path = codebase_manager.workspace_root / repo_path
+        path_exists = repo_path.exists()
+
+        info_table.add_row("Exists:", "✅ Yes" if path_exists else "❌ No")
 
         console.print(Panel(info_table, title="🎯 Current Repository", border_style="blue"))
 

@@ -298,21 +298,27 @@ class SimpleCodebaseManager:
         return True
 
     def list_repositories(self) -> List[Dict[str, Any]]:
-        """List all available repositories"""
+        """List all registered repositories with their status"""
         repos_info = self.get_repositories_info()
-        current_repo = repos_info.get("current")
-
         repositories = []
+        
         for repo_id, repo_info in repos_info["repositories"].items():
             repo_copy = repo_info.copy()
-            repo_copy["is_current"] = (repo_id == current_repo)
-            repo_copy["exists"] = Path(repo_info["actual_path"]).exists()
-
-            # Calculate repository size
-            repo_copy["size_mb"] = self._calculate_repo_size(Path(repo_info["actual_path"]))
-
+            
+            # Fix the path checking - use absolute path resolution
+            actual_path = Path(repo_info["actual_path"])
+            if not actual_path.is_absolute():
+                # If it's relative, resolve it against the workspace root
+                actual_path = self.workspace_root / actual_path
+            
+            # Check if the path exists
+            repo_copy["exists"] = actual_path.exists()
+            
+            # Also store the resolved absolute path for clarity
+            repo_copy["resolved_path"] = str(actual_path.resolve())
+            
             repositories.append(repo_copy)
-
+        
         return repositories
 
     def remove_repository(self, repo_identifier: str, delete_files: bool = False) -> bool:

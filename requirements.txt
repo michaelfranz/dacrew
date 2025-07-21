@@ -15,7 +15,6 @@ jira==3.5.2
 atlassian-python-api==3.41.4
 
 # Vector database and embeddings
-chromadb==0.4.24
 sentence-transformers==2.7.0
 faiss-cpu==1.8.0
 

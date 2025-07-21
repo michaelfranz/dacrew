@@ -17,7 +17,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 20  # Overall job timeout
 
     steps:
       - name: Checkout code
@@ -28,6 +28,7 @@ jobs:
 
       - name: Build Docker image
         uses: docker/build-push-action@v5
+        timeout-minutes: 12  # Give build more time
         with:
           context: .
           file: Dockerfile
@@ -37,6 +38,7 @@ jobs:
           load: true
 
       - name: Run tests in Docker
+        timeout-minutes: 5  # Tests should be fast
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/app \

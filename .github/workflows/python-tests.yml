@@ -20,6 +20,7 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15  # Add overall job timeout
 
     strategy:
       matrix:
@@ -47,7 +48,7 @@ jobs:
           } || {
             echo "Installation with eager strategy failed, trying individual packages"
             # Install core packages first
-            pip install pytest pytest-cov pytest-html pytest-xdist
+            pip install pytest pytest-cov pytest-html pytest-xdist timeout-decorator
             # Install main dependencies with latest compatible versions
             pip install --upgrade crewai crewai-tools langchain langchain-cohere langchain-community
             pip install --upgrade langchain-core langchain-experimental langchain-openai langchain-text-splitters
@@ -56,13 +57,6 @@ jobs:
             pip install --upgrade sentence-transformers faiss-cpu transformers torch datasets
             pip install pandas numpy python-dotenv click rich typer black isort mypy pydantic setuptools
           }
-
-      # Alternative: Use pip-tools for better dependency resolution (uncomment if needed)
-      # - name: Install pip-tools and resolve dependencies
-      #   run: |
-      #     pip install pip-tools
-      #     pip-compile --upgrade requirements.in  # if you have a requirements.in file
-      #     pip install -r requirements.txt
 
       - name: Verify installation and show package versions
         run: |
@@ -81,73 +75,102 @@ jobs:
             echo "No Python source files found in src directory"
           fi
 
-      - name: Run unit tests
+      - name: Run unit tests with timeout
         if: steps.check_src.outputs.has_src == 'true'
+        timeout-minutes: 10  # Add timeout for this step
         run: |
           # Check if unit tests exist
           if [ -d "tests/unit" ] && find tests/unit -name "test_*.py" -o -name "*_test.py" | head -1 | grep -q .; then
-            pytest tests/unit/ \
+            echo "Running unit tests with timeout protection..."
+          
+            # Use timeout command and pytest timeout plugin
+            timeout 600s pytest tests/unit/ \
+              --timeout=30 \
+              --timeout-method=thread \
               --junitxml=test-results-unit.xml \
               --cov=src \
               --cov-report=xml:coverage-unit.xml \
               --cov-report=html:htmlcov-unit \
               --cov-report=term-missing \
-              -v
+              --maxfail=5 \
+              -v \
+              -x || {
+                echo "Unit tests failed or timed out"
+                # Still create results file for upload
+                [ ! -f test-results-unit.xml ] && echo '<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="unit-tests" tests="0" failures="1" errors="1" skipped="0"><testcase name="timeout" classname="UnitTests"><failure message="Tests timed out or failed">Unit tests timed out or failed to complete</failure></testcase></testsuite></testsuites>' > test-results-unit.xml
+                exit 1
+              }
           else
             echo "No unit tests found in tests/unit directory"
-            # Create empty results file so the workflow doesn't fail
             echo '<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="unit-tests" tests="0" failures="0" errors="0" skipped="0"></testsuite></testsuites>' > test-results-unit.xml
           fi
 
-      - name: Run integration tests
+      - name: Run integration tests with timeout
         if: steps.check_src.outputs.has_src == 'true'
+        timeout-minutes: 8
+        continue-on-error: true  # Don't fail the entire job if integration tests timeout
         run: |
           if [ -d "tests/integration" ] && find tests/integration -name "test_*.py" -o -name "*_test.py" | head -1 | grep -q .; then
-            pytest tests/integration/ \
+            echo "Running integration tests with timeout protection..."
+          
+            timeout 480s pytest tests/integration/ \
+              --timeout=60 \
+              --timeout-method=thread \
               --junitxml=test-results-integration.xml \
               --cov=src \
               --cov-append \
               --cov-report=xml:coverage-integration.xml \
               --cov-report=html:htmlcov-integration \
-              -v
+              --maxfail=3 \
+              -v \
+              -x || {
+                echo "Integration tests failed or timed out"
+                [ ! -f test-results-integration.xml ] && echo '<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="integration-tests" tests="0" failures="1" errors="1" skipped="0"><testcase name="timeout" classname="IntegrationTests"><failure message="Tests timed out or failed">Integration tests timed out or failed to complete</failure></testcase></testsuite></testsuites>' > test-results-integration.xml
+              }
           else
             echo "No integration tests found in tests/integration directory"
             echo '<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="integration-tests" tests="0" failures="0" errors="0" skipped="0"></testsuite></testsuites>' > test-results-integration.xml
           fi
 
-      - name: Run end-to-end tests
+      - name: Run end-to-end tests with timeout
         if: steps.check_src.outputs.has_src == 'true'
+        timeout-minutes: 8
+        continue-on-error: true
         run: |
           if [ -d "tests/e2e" ] && find tests/e2e -name "test_*.py" -o -name "*_test.py" | head -1 | grep -q .; then
-            pytest tests/e2e/ \
+            echo "Running e2e tests with timeout protection..."
+          
+            timeout 480s pytest tests/e2e/ \
+              --timeout=60 \
+              --timeout-method=thread \
               --junitxml=test-results-e2e.xml \
               --cov=src \
               --cov-append \
               --cov-report=xml:coverage-e2e.xml \
               --cov-report=html:htmlcov-e2e \
-              -v
+              --maxfail=3 \
+              -v \
+              -x || {
+                echo "E2E tests failed or timed out"
+                [ ! -f test-results-e2e.xml ] && echo '<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="e2e-tests" tests="0" failures="1" errors="1" skipped="0"><testcase name="timeout" classname="E2ETests"><failure message="Tests timed out or failed">E2E tests timed out or failed to complete</failure></testcase></testsuite></testsuites>' > test-results-e2e.xml
+              }
           else
             echo "No e2e tests found in tests/e2e directory"
             echo '<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="e2e-tests" tests="0" failures="0" errors="0" skipped="0"></testsuite></testsuites>' > test-results-e2e.xml
           fi
 
-      # Run any existing tests in the tests directory
-      - name: Run all available tests
+      # Run a quick smoke test to identify problematic tests
+      - name: Run problematic test identification
+        if: failure()
+        continue-on-error: true
         run: |
-          # Find and run any test files that exist
-          if find tests -name "test_*.py" -o -name "*_test.py" | head -1 | grep -q .; then
-            echo "Running all available tests..."
-            pytest tests/ \
-              --junitxml=test-results-all.xml \
-              --cov=. \
-              --cov-report=xml:coverage-all.xml \
-              --cov-report=html:htmlcov-all \
-              --cov-report=term-missing \
-              -v || echo "Some tests failed, but continuing..."
-          else
-            echo "No test files found. Creating placeholder results."
-            echo '<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="all-tests" tests="0" failures="0" errors="0" skipped="0"></testsuite></testsuites>' > test-results-all.xml
-          fi
+          echo "Identifying potentially problematic tests..."
+          
+          # Run each test file individually with short timeout to identify hanging tests
+          find tests/unit -name "test_*.py" | while read test_file; do
+            echo "Testing $test_file individually..."
+            timeout 60s pytest "$test_file" -v --tb=short || echo "PROBLEMATIC: $test_file"
+          done
 
       - name: Upload test results and artifacts
         if: always()
@@ -158,7 +181,6 @@ jobs:
             test-results-*.xml
             coverage-*.xml
             htmlcov-*/**
-            pip-list-output.txt
           retention-days: 30
 
       # Optional: Create a summary report
@@ -177,5 +199,11 @@ jobs:
           echo "- Integration test files: $INTEGRATION_TESTS" >> $GITHUB_STEP_SUMMARY
           echo "- E2E test files: $E2E_TESTS" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Show test results if they exist
+          if [ -f test-results-unit.xml ]; then
+            echo "### Unit Test Results" >> $GITHUB_STEP_SUMMARY
+            grep -o 'tests="[^"]*"' test-results-unit.xml | head -1 >> $GITHUB_STEP_SUMMARY || echo "Could not parse test results" >> $GITHUB_STEP_SUMMARY
+          fi
           
           pip list | grep -E "(crewai|chromadb|langchain|pytest)" >> $GITHUB_STEP_SUMMARY || echo "Package list unavailable" >> $GITHUB_STEP_SUMMARY

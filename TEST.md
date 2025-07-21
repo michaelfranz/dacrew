@@ -8,10 +8,10 @@ This document tracks the testing status of all DaCrew command-line features for 
 |---------|-----------------|-------------|-------|
 | **Connection Management** | | | |
 | Test Jira connection | ✅ | ✅ | `dacrew test-connection` - Validates Jira connectivity and authentication |
-| Test issues connection | ❌ | ❌ | `dacrew issues test-connection` - Specific Jira issues API validation |
+| Test issues connection | ✅ | ✅ | `dacrew issues test-connection` - Specific Jira issues API validation |
 | **Jira Issues Management** | | | |
-| List issues | ❌ | ❌ | `dacrew issues list` - Fetches and displays Jira issues with filtering |
-| Show specific issue | ❌ | ❌ | `dacrew issues show <issue-key>` - Displays detailed issue information |
+| List issues | ✅ | ✅ | `dacrew issues list` - Fetches and displays Jira issues with filtering |
+| Show specific issue | ✅ | ✅ | `dacrew issues show <issue-key>` - Displays detailed issue information |
 | Create new issue | ❌ | ❌ | `dacrew issues create` - Interactive issue creation workflow |
 | **Workspace Management** | | | |
 | Initialize workspace | ❌ | ❌ | `dacrew codebase init` - Sets up new workspace configuration |

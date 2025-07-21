@@ -7,10 +7,10 @@ This document tracks the testing status of all DaCrew command-line features for 
 | Feature | Manually Tested | Unit Tested | Notes |
 |---------|-----------------|-------------|-------|
 | **Connection Management** | | | |
-| Test JIRA connection | ❌ | ❌ | `dacrew test-connection` - Validates JIRA connectivity and authentication |
-| Test issues connection | ❌ | ❌ | `dacrew issues test-connection` - Specific JIRA issues API validation |
-| **JIRA Issues Management** | | | |
-| List issues | ❌ | ❌ | `dacrew issues list` - Fetches and displays JIRA issues with filtering |
+| Test Jira connection | ✅ | ✅ | `dacrew test-connection` - Validates Jira connectivity and authentication |
+| Test issues connection | ❌ | ❌ | `dacrew issues test-connection` - Specific Jira issues API validation |
+| **Jira Issues Management** | | | |
+| List issues | ❌ | ❌ | `dacrew issues list` - Fetches and displays Jira issues with filtering |
 | Show specific issue | ❌ | ❌ | `dacrew issues show <issue-key>` - Displays detailed issue information |
 | Create new issue | ❌ | ❌ | `dacrew issues create` - Interactive issue creation workflow |
 | **Workspace Management** | | | |
@@ -58,7 +58,7 @@ This document tracks the testing status of all DaCrew command-line features for 
 
 3. **Integration Testing**: Should verify:
     - Command-line interface behavior
-    - External service connections (JIRA, file system)
+    - External service connections (Jira, file system)
     - Configuration handling
 
 4. Update the testing columns as testing progresses:

@@ -1,18 +1,18 @@
-"""Utility functions for JIRA AI Assistant"""
+"""Utility functions for Dacrew"""
 
 import re
-from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
+from typing import List, Dict, Any, Optional
 
 
 def validate_issue_key(key: str) -> bool:
-    """Validate JIRA issue key format"""
+    """Validate Jira issue key format"""
     pattern = r'^[A-Z][A-Z0-9]+-\d+$'
     return bool(re.match(pattern, key))
 
 
 def extract_issue_keys(text: str) -> List[str]:
-    """Extract JIRA issue keys from text"""
+    """Extract Jira issue keys from text"""
     pattern = r'\b[A-Z][A-Z0-9]+-\d+\b'
     return re.findall(pattern, text)
 
@@ -25,7 +25,7 @@ def format_issue_summary(summary: str, max_length: int = 50) -> str:
 
 
 def get_common_statuses() -> List[str]:
-    """Get common JIRA statuses"""
+    """Get common Jira statuses"""
     return [
         'Open', 'In Progress', 'Done', 'Closed', 'Resolved',
         'To Do', 'In Review', 'Testing', 'Blocked', 'Cancelled'
@@ -33,7 +33,7 @@ def get_common_statuses() -> List[str]:
 
 
 def get_common_priorities() -> List[str]:
-    """Get common JIRA priorities"""
+    """Get common Jira priorities"""
     return [
         'Blocker', 'Critical', 'High', 'Major', 'Medium',
         'Normal', 'Low', 'Minor', 'Trivial'
@@ -41,7 +41,7 @@ def get_common_priorities() -> List[str]:
 
 
 def get_common_issue_types() -> List[str]:
-    """Get common JIRA issue types"""
+    """Get common Jira issue types"""
     return [
         'Bug', 'Task', 'Story', 'Epic', 'Sub-task',
         'Improvement', 'New Feature', 'Defect', 'Issue'
@@ -97,7 +97,7 @@ def build_jql_query(
         conditions.append(f"status = \"{status}\"")
 
     if priority:
-        # Map common priority names to what might exist in JIRA
+        # Map common priority names to what might exist in Jira
         priority_mapping = {
             'high': ['High', 'Major', 'Critical', 'Blocker'],
             'medium': ['Medium', 'Normal'],
@@ -112,7 +112,7 @@ def build_jql_query(
             conditions.append(f"priority = \"{priority}\"")
 
     if issue_type:
-        # Map common issue type names to what might exist in JIRA
+        # Map common issue type names to what might exist in Jira
         issue_type_mapping = {
             'bug': ['Bug', 'Defect', 'Issue', 'Problem'],
             'task': ['Task', 'Story', 'User Story', 'Feature'],
@@ -128,7 +128,7 @@ def build_jql_query(
             conditions.append(f"issuetype = \"{issue_type}\"")
 
     if text_search:
-        # Use JIRA's text search
+        # Use Jira's text search
         conditions.append(f"text ~ \"{text_search}\"")
 
     if labels:

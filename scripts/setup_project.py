@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-"""Setup script for JIRA AI Assistant project"""
+"""Setup script for Dacrew project"""
 
-import os
 from pathlib import Path
 
 def create_directory_structure():
@@ -83,7 +82,7 @@ def create_init_files():
 
 def main():
     """Main setup function"""
-    print("Setting up JIRA AI Assistant project structure...")
+    print("Setting up Dacrew project structure...")
     print(f"Project root: {Path(__file__).parent.parent}")
     create_directory_structure()
     create_init_files()

@@ -1,28 +1,28 @@
-"""JIRA Action Agent for creating, updating, and managing JIRA issues"""
+"""Jira Action Agent for creating, updating, and managing Jira issues"""
 
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List
+
 from crewai import Agent
 from crewai.tools import BaseTool
-from pydantic import BaseModel, Field
 
-from .base_agent import BaseJIRAAgent
-from ..utils import validate_issue_key, get_common_issue_types, get_common_statuses
+from .base_agent import BaseJiraAgent
+from ..utils import validate_issue_key
 
 logger = logging.getLogger(__name__)
 
 
 class CreateIssueTool(BaseTool):
-    """Tool for creating new JIRA issues"""
+    """Tool for creating new Jira issues"""
     name: str = "create_issue"
-    description: str = "Create a new JIRA issue. Parameters: project (str), summary (str), description (str), issue_type (str, default='Task'), priority (str, optional), assignee (str, optional)"
+    description: str = "Create a new Jira issue. Parameters: project (str), summary (str), description (str), issue_type (str, default='Task'), priority (str, optional), assignee (str, optional)"
 
     def _run(self, project: str, summary: str, description: str,
              issue_type: str = "Task", priority: str = None, assignee: str = None) -> str:
-        """Create a new JIRA issue"""
+        """Create a new Jira issue"""
         jira_client = getattr(self, '_jira_client', None)
         if not jira_client:
-            return "Error: JIRA client not available"
+            return "Error: Jira client not available"
 
         try:
             # Prepare additional fields
@@ -55,16 +55,16 @@ class CreateIssueTool(BaseTool):
 
 
 class UpdateIssueTool(BaseTool):
-    """Tool for updating existing JIRA issues"""
+    """Tool for updating existing Jira issues"""
     name: str = "update_issue"
-    description: str = "Update an existing JIRA issue. Parameters: issue_key (str), summary (str, optional), description (str, optional), assignee (str, optional), priority (str, optional)"
+    description: str = "Update an existing Jira issue. Parameters: issue_key (str), summary (str, optional), description (str, optional), assignee (str, optional), priority (str, optional)"
 
     def _run(self, issue_key: str, summary: str = None, description: str = None,
              assignee: str = None, priority: str = None) -> str:
-        """Update an existing JIRA issue"""
+        """Update an existing Jira issue"""
         jira_client = getattr(self, '_jira_client', None)
         if not jira_client:
-            return "Error: JIRA client not available"
+            return "Error: Jira client not available"
 
         try:
             if not validate_issue_key(issue_key):
@@ -99,15 +99,15 @@ class UpdateIssueTool(BaseTool):
 
 
 class AddCommentTool(BaseTool):
-    """Tool for adding comments to JIRA issues"""
+    """Tool for adding comments to Jira issues"""
     name: str = "add_comment"
-    description: str = "Add a comment to a JIRA issue. Parameters: issue_key (str), comment (str)"
+    description: str = "Add a comment to a Jira issue. Parameters: issue_key (str), comment (str)"
 
     def _run(self, issue_key: str, comment: str) -> str:
-        """Add a comment to a JIRA issue"""
+        """Add a comment to a Jira issue"""
         jira_client = getattr(self, '_jira_client', None)
         if not jira_client:
-            return "Error: JIRA client not available"
+            return "Error: Jira client not available"
 
         try:
             if not validate_issue_key(issue_key):
@@ -126,15 +126,15 @@ class AddCommentTool(BaseTool):
 
 
 class TransitionIssueTool(BaseTool):
-    """Tool for transitioning JIRA issues"""
+    """Tool for transitioning Jira issues"""
     name: str = "transition_issue"
-    description: str = "Transition a JIRA issue to a different status. Parameters: issue_key (str), status (str)"
+    description: str = "Transition a Jira issue to a different status. Parameters: issue_key (str), status (str)"
 
     def _run(self, issue_key: str, status: str) -> str:
-        """Transition a JIRA issue to a different status"""
+        """Transition a Jira issue to a different status"""
         jira_client = getattr(self, '_jira_client', None)
         if not jira_client:
-            return "Error: JIRA client not available"
+            return "Error: Jira client not available"
 
         try:
             if not validate_issue_key(issue_key):
@@ -172,13 +172,13 @@ class TransitionIssueTool(BaseTool):
 class GetTransitionsTool(BaseTool):
     """Tool for getting available transitions"""
     name: str = "get_transitions"
-    description: str = "Get available transitions for a JIRA issue. Parameters: issue_key (str)"
+    description: str = "Get available transitions for a Jira issue. Parameters: issue_key (str)"
 
     def _run(self, issue_key: str) -> str:
-        """Get available transitions for a JIRA issue"""
+        """Get available transitions for a Jira issue"""
         jira_client = getattr(self, '_jira_client', None)
         if not jira_client:
-            return "Error: JIRA client not available"
+            return "Error: Jira client not available"
 
         try:
             if not validate_issue_key(issue_key):
@@ -200,24 +200,24 @@ class GetTransitionsTool(BaseTool):
             return f"❌ Error getting transitions: {str(e)}"
 
 
-class JIRAActionAgent(BaseJIRAAgent):
-    """Agent specialized in performing actions on JIRA issues"""
+class JiraActionAgent(BaseJiraAgent):
+    """Agent specialized in performing actions on Jira issues"""
 
     def _create_agent(self) -> Agent:
-        """Create the JIRA Action Agent"""
+        """Create the Jira Action Agent"""
         return Agent(
-            role="JIRA Action Specialist",
-            goal="Create, update, and manage JIRA issues based on user requests",
-            backstory="""You are an expert in JIRA issue management and workflows. 
+            role="Jira Action Specialist",
+            goal="Create, update, and manage Jira issues based on user requests",
+            backstory="""You are an expert in Jira issue management and workflows. 
             You help users create new issues, update existing ones, manage transitions, 
-            and perform other JIRA administrative tasks efficiently and accurately.""",
+            and perform other Jira administrative tasks efficiently and accurately.""",
             tools=self.get_tools(),
             llm=self.llm,
             verbose=True
         )
 
     def get_tools(self) -> List[BaseTool]:
-        """Get tools for the JIRA Action Agent"""
+        """Get tools for the Jira Action Agent"""
         tools = [
             CreateIssueTool(),
             UpdateIssueTool(),

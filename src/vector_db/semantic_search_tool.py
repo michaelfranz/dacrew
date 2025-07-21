@@ -1,22 +1,20 @@
-"""Semantic Search Tool for JIRA issues"""
+"""Semantic Search Tool for Jira issues"""
 
 import logging
-from typing import List, Dict, Any, Optional
-from crewai.tools import BaseTool
 
-from .vector_manager import VectorManager
+from crewai.tools import BaseTool
 
 logger = logging.getLogger(__name__)
 
 
 class SemanticSearchTool(BaseTool):
-    """Tool for performing semantic search on JIRA issues"""
+    """Tool for performing semantic search on Jira issues"""
     name: str = "semantic_search"
-    description: str = "Perform semantic search on JIRA issues using natural language. Parameters: query (str), max_results (int, default=10), project_filter (str, optional), status_filter (str, optional)"
+    description: str = "Perform semantic search on Jira issues using natural language. Parameters: query (str), max_results (int, default=10), project_filter (str, optional), status_filter (str, optional)"
 
     def _run(self, query: str, max_results: int = 10,
              project_filter: str = None, status_filter: str = None) -> str:
-        """Perform semantic search on JIRA issues"""
+        """Perform semantic search on Jira issues"""
         vector_manager = getattr(self, '_vector_manager', None)
         if not vector_manager:
             return "Error: Vector manager not available"
@@ -59,19 +57,19 @@ class SemanticSearchTool(BaseTool):
 
 
 class VectorSyncTool(BaseTool):
-    """Tool for syncing JIRA issues with vector database"""
+    """Tool for syncing Jira issues with vector database"""
     name: str = "sync_vector_db"
-    description: str = "Sync JIRA issues with vector database for semantic search. Parameters: project_key (str, optional), force_refresh (bool, default=False)"
+    description: str = "Sync Jira issues with vector database for semantic search. Parameters: project_key (str, optional), force_refresh (bool, default=False)"
 
     def _run(self, project_key: str = None, force_refresh: bool = False) -> str:
-        """Sync JIRA issues with vector database"""
+        """Sync Jira issues with vector database"""
         vector_manager = getattr(self, '_vector_manager', None)
         jira_client = getattr(self, '_jira_client', None)
 
         if not vector_manager:
             return "Error: Vector manager not available"
         if not jira_client:
-            return "Error: JIRA client not available"
+            return "Error: Jira client not available"
 
         try:
             result = vector_manager.sync_with_jira(

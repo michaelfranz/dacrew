@@ -1,22 +1,21 @@
-"""Agent Manager for coordinating multiple JIRA AI agents"""
+"""Agent Manager for coordinating multiple Jira AI agents"""
 
 import logging
-from typing import Dict, Any, Optional, List
-from crewai import Crew, Task
+from typing import Dict, Any, Optional
 
+from .jira_action_agent import JiraActionAgent
+from .jira_query_agent import JiraQueryAgent
 from ..config import Config
-from ..jira_client import JIRAClient
+from ..jira_client import JiraClient
 from ..vector_db.vector_manager import VectorManager
-from .jira_query_agent import JIRAQueryAgent
-from .jira_action_agent import JIRAActionAgent
 
 logger = logging.getLogger(__name__)
 
 
 class AgentManager:
-    """Manages and coordinates multiple JIRA AI agents"""
+    """Manages and coordinates multiple Jira AI agents"""
 
-    def __init__(self, config: Config, jira_client: JIRAClient, vector_manager: VectorManager = None):
+    def __init__(self, config: Config, jira_client: JiraClient, vector_manager: VectorManager = None):
         self.config = config
         self.jira_client = jira_client
         self.vector_manager = vector_manager
@@ -26,8 +25,8 @@ class AgentManager:
         """Initialize all agents"""
         try:
             agents = {
-                'query': JIRAQueryAgent(self.config, self.jira_client, self.vector_manager),
-                'action': JIRAActionAgent(self.config, self.jira_client)
+                'query': JiraQueryAgent(self.config, self.jira_client, self.vector_manager),
+                'action': JiraActionAgent(self.config, self.jira_client)
             }
 
             logger.info("All agents initialized successfully")
@@ -104,7 +103,7 @@ class AgentManager:
         try:
             # Enhanced task description for semantic search
             task_description = f"""
-            Search for JIRA issues based on this query: "{query}"
+            Search for Jira issues based on this query: "{query}"
             
             Instructions:
             1. Analyze the query to understand what the user is looking for
@@ -128,7 +127,7 @@ class AgentManager:
         """Handle create queries using the Action Agent"""
         try:
             task_description = f"""
-            Create a new JIRA issue based on this request: "{query}"
+            Create a new Jira issue based on this request: "{query}"
             
             Instructions:
             1. Extract the issue details from the user's request
@@ -153,7 +152,7 @@ class AgentManager:
         """Handle update queries using the Action Agent"""
         try:
             task_description = f"""
-            Update a JIRA issue based on this request: "{query}"
+            Update a Jira issue based on this request: "{query}"
             
             Instructions:
             1. Identify which issue to update (extract issue key if mentioned)
@@ -174,7 +173,7 @@ class AgentManager:
         """Handle transition queries using the Action Agent"""
         try:
             task_description = f"""
-            Transition a JIRA issue based on this request: "{query}"
+            Transition a Jira issue based on this request: "{query}"
             
             Instructions:
             1. Identify which issue to transition (extract issue key if mentioned)
@@ -196,7 +195,7 @@ class AgentManager:
         """Handle sync queries using the Query Agent"""
         try:
             task_description = f"""
-            Sync JIRA issues with the vector database based on this request: "{query}"
+            Sync Jira issues with the vector database based on this request: "{query}"
             
             Instructions:
             1. Determine if this is a full sync or project-specific sync

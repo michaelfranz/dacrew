@@ -28,7 +28,7 @@ class VectorDBConfig:
 
 class VectorManager:
     """
-    Flexible vector database manager supporting both JIRA issues and codebase chunks
+    Flexible vector database manager supporting both Jira issues and codebase chunks
 
     This manager can be configured with:
     - Custom database paths (for workspace-specific embeddings)
@@ -252,12 +252,12 @@ class VectorManager:
             return 0
 
     # ============================================================================
-    # JIRA-Specific Operations (for backward compatibility)
+    # Jira-Specific Operations (for backward compatibility)
     # ============================================================================
 
     def add_issue_to_vector_db(self, issue: Dict[str, Any],
                                collection_name: str = "jira_issues") -> bool:
-        """Add a JIRA issue to the vector database"""
+        """Add a Jira issue to the vector database"""
         try:
             # Create searchable text from issue
             searchable_text = self._create_searchable_text(issue)
@@ -356,7 +356,7 @@ class VectorManager:
     def semantic_search(self, query: str, n_results: int = 10,
                         filters: Optional[Dict[str, Any]] = None,
                         collection_name: str = "jira_issues") -> List[Dict[str, Any]]:
-        """Perform semantic search on JIRA issues"""
+        """Perform semantic search on Jira issues"""
         try:
             # Build where clause
             where_clause = {"document_type": "jira_issue"}
@@ -372,7 +372,7 @@ class VectorManager:
                 where=where_clause
             )
 
-            # Reformat for JIRA compatibility
+            # Reformat for Jira compatibility
             jira_results = []
             for result in results:
                 jira_result = {
@@ -726,7 +726,7 @@ class VectorManager:
         return extension_map.get(file_path.suffix.lower(), 'text')
 
     def _create_searchable_text(self, issue: Dict[str, Any]) -> str:
-        """Create searchable text from JIRA issue"""
+        """Create searchable text from Jira issue"""
         text_parts = [
             f"Summary: {issue['summary']}",
             f"Key: {issue['key']}",

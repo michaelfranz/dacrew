@@ -1,5 +1,5 @@
 
-"""Utilities package for JIRA AI Assistant"""
+"""Utilities package for Dacrew"""
 
 from .jira_utils import (
     build_jql_query,

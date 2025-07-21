@@ -1,9 +1,9 @@
 """CLI interface for DaCrew - AI-powered Development Crew"""
 
+from pathlib import Path
+
 import typer
 from rich.console import Console
-from typing import Optional
-from pathlib import Path
 
 # Initialize Typer app and Rich console
 app = typer.Typer(
@@ -17,40 +17,40 @@ console = Console()
 
 @app.command("test-connection")
 def test_jira_connection():
-    """🔗 Test JIRA connection"""
+    """🔗 Test Jira connection"""
     try:
         from .config import Config
-        from .jira_client import JIRAClient
+        from .jira_client import JiraClient
 
-        console.print("🔗 Testing JIRA connection...", style="cyan")
+        console.print("🔗 Testing Jira connection...", style="cyan")
 
         config = Config.load()
 
         # Validate configuration
         if not config.jira.url:
-            console.print("❌ JIRA URL not configured", style="red")
+            console.print("❌ Jira URL not configured", style="red")
             console.print("Please set JIRA_URL in your .env file", style="yellow")
             return
 
         if not config.jira.username:
-            console.print("❌ JIRA username not configured", style="red")
+            console.print("❌ Jira username not configured", style="red")
             console.print("Please set JIRA_USERNAME in your .env file", style="yellow")
             return
 
         if not config.jira.api_token:
-            console.print("❌ JIRA API token not configured", style="red")
+            console.print("❌ Jira API token not configured", style="red")
             console.print("Please set JIRA_API_TOKEN in your .env file", style="yellow")
             return
 
         # Test connection
-        client = JIRAClient(config)
+        client = JiraClient(config)
 
         if client.test_connection():
-            console.print("✅ JIRA connection successful!", style="green")
+            console.print("✅ Jira connection successful!", style="green")
             console.print(f"Connected to: {config.jira.url}", style="dim")
             console.print(f"Username: {config.jira.username}", style="dim")
         else:
-            console.print("❌ JIRA connection failed!", style="red")
+            console.print("❌ Jira connection failed!", style="red")
             console.print("Please check your credentials and try again", style="yellow")
 
     except Exception as e:
@@ -60,7 +60,7 @@ def test_jira_connection():
 # Issues Command Group
 # ============================================================================
 
-issues_app = typer.Typer(help="🎫 Manage JIRA issues and tickets")
+issues_app = typer.Typer(help="🎫 Manage Jira issues and tickets")
 app.add_typer(issues_app, name="issues")
 
 @issues_app.command("list")
@@ -70,13 +70,13 @@ def list_issues(
         assignee: str = typer.Option(None, "--assignee", "-a", help="Filter by assignee"),
         limit: int = typer.Option(10, "--limit", "-l", help="Maximum number of issues to show")
 ):
-    """📋 List JIRA issues"""
+    """📋 List Jira issues"""
     try:
         from .config import Config
-        from .jira_client import JIRAClient
+        from .jira_client import JiraClient
 
         config = Config.load()
-        client = JIRAClient(config)
+        client = JiraClient(config)
 
         # Build JQL query
         jql_parts = []
@@ -104,7 +104,7 @@ def list_issues(
         # Display issues in a table
         from rich.table import Table
 
-        table = Table(title="JIRA Issues")
+        table = Table(title="Jira Issues")
         table.add_column("Key", style="cyan", no_wrap=True)
         table.add_column("Summary", style="white")
         table.add_column("Status", style="green")
@@ -130,10 +130,10 @@ def show_issue(issue_key: str):
     """🔍 Show detailed information about a specific issue"""
     try:
         from .config import Config
-        from .jira_client import JIRAClient
+        from .jira_client import JiraClient
 
         config = Config.load()
-        client = JIRAClient(config)
+        client = JiraClient(config)
 
         issue = client.get_issue(issue_key)
 
@@ -179,13 +179,13 @@ def create_issue(
         priority: str = typer.Option(None, "--priority", help="Priority"),
         assignee: str = typer.Option(None, "--assignee", "-a", help="Assignee username")
 ):
-    """✨ Create a new JIRA issue"""
+    """✨ Create a new Jira issue"""
     try:
         from .config import Config
-        from .jira_client import JIRAClient
+        from .jira_client import JiraClient
 
         config = Config.load()
-        client = JIRAClient(config)
+        client = JiraClient(config)
 
         # Use default project if not specified
         if not project:
@@ -224,7 +224,7 @@ def create_issue(
 
 @issues_app.command("test-connection")
 def test_connection_issues():
-    """🔗 Test JIRA connection (issues context)"""
+    """🔗 Test Jira connection (issues context)"""
     # Reuse the main test-connection logic
     test_jira_connection()
 
@@ -448,7 +448,6 @@ def scan_codebase(
         output: str = typer.Option(None, "--output", "-o", help="Output file path (optional)")
 ):
     """🔍 Scan and analyze codebase structure in workspace/repos"""
-    import os
     from pathlib import Path
     from rich.table import Table
     from rich.tree import Tree

@@ -1,8 +1,9 @@
-"""Enhanced JIRA client with AI-friendly methods"""
+"""Enhanced Jira client with AI-friendly methods"""
 
-import logging
 import json
+import logging
 from typing import List, Dict, Any, Optional
+
 from jira import JIRA
 from jira.exceptions import JIRAError
 
@@ -11,8 +12,8 @@ from .config import Config
 logger = logging.getLogger(__name__)
 
 
-class JIRAClient:
-    """Enhanced JIRA client with AI-friendly methods"""
+class JiraClient:
+    """Enhanced Jira client with AI-friendly methods"""
 
     def __init__(self, config: Config):
         self.config = config
@@ -20,19 +21,19 @@ class JIRAClient:
         self._connect()
 
     def _connect(self):
-        """Establish connection to JIRA"""
+        """Establish connection to Jira"""
         try:
             self._client = JIRA(
                 server=self.config.jira.url,
                 basic_auth=(self.config.jira.username, self.config.jira.api_token)
             )
-            logger.info("Successfully connected to JIRA")
+            logger.info("Successfully connected to Jira")
         except JIRAError as e:
-            logger.error(f"Failed to connect to JIRA: {e}")
+            logger.error(f"Failed to connect to Jira: {e}")
             raise
 
     def test_connection(self) -> bool:
-        """Test if JIRA connection is working"""
+        """Test if Jira connection is working"""
         try:
             user = self._client.myself()
             logger.info(f"Connection test successful for user: {user['displayName']}")
@@ -133,7 +134,7 @@ class JIRAClient:
             return {}
 
     def _parse_jira_error(self, error: JIRAError) -> str:
-        """Parse JIRA error response and provide helpful error messages"""
+        """Parse Jira error response and provide helpful error messages"""
         try:
             # Try to extract the response text for detailed error info
             if hasattr(error, 'response') and error.response:
@@ -252,7 +253,7 @@ class JIRAClient:
                     suggestions.append("Try creating the issue without the --assignee flag")
             
             # Create comprehensive error message
-            error_message = f"JIRA Error: {parsed_error}"
+            error_message = f"Jira Error: {parsed_error}"
             if suggestions:
                 error_message += f"\n\nSuggestions:\n• " + "\n• ".join(suggestions)
             
@@ -340,7 +341,7 @@ class JIRAClient:
                     else:
                         suggestions.append(f"No subtask types are configured for project '{project_key}'")
             
-            error_message = f"JIRA Error: {parsed_error}"
+            error_message = f"Jira Error: {parsed_error}"
             if suggestions:
                 error_message += f"\n\nSuggestions:\n• " + "\n• ".join(suggestions)
             
@@ -477,7 +478,7 @@ class JIRAClient:
             return False
 
     def _format_issue(self, issue) -> Dict[str, Any]:
-        """Format JIRA issue object to dictionary"""
+        """Format Jira issue object to dictionary"""
         return {
             'key': issue.key,
             'id': issue.id,

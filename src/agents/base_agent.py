@@ -1,22 +1,22 @@
-"""Base agent class for JIRA AI Assistant"""
+"""Base agent class for Dacrew"""
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
 from crewai import Agent, Task, Crew
 from langchain_openai import ChatOpenAI
 
 from ..config import Config
-from ..jira_client import JIRAClient
+from ..jira_client import JiraClient
 
 logger = logging.getLogger(__name__)
 
 
-class BaseJIRAAgent(ABC):
-    """Base class for JIRA AI agents"""
+class BaseJiraAgent(ABC):
+    """Base class for Jira AI agents"""
 
-    def __init__(self, config: Config, jira_client: JIRAClient, vector_manager=None):
+    def __init__(self, config: Config, jira_client: JiraClient, vector_manager=None):
         self.config = config
         self.jira_client = jira_client
         self.vector_manager = vector_manager
@@ -48,7 +48,7 @@ class BaseJIRAAgent(ABC):
             task = Task(
                 description=task_description,
                 agent=self.agent,
-                expected_output="A clear and comprehensive response to the user's query with relevant JIRA issue information.",
+                expected_output="A clear and comprehensive response to the user's query with relevant Jira issue information.",
                 **kwargs
             )
 

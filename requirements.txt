@@ -10,7 +10,7 @@ langchain-openai==0.2.14
 langchain-text-splitters==0.3.8
 openai==1.93.0
 
-# JIRA integration
+# Jira integration
 jira==3.5.2
 atlassian-python-api==3.41.4
 

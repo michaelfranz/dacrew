@@ -11,14 +11,14 @@ load_dotenv()
 
 
 @dataclass
-class JIRAConfig:
-    """JIRA connection configuration"""
+class JiraConfig:
+    """Jira connection configuration"""
     url: str
     username: str
     api_token: str
 
     @classmethod
-    def from_env(cls) -> 'JIRAConfig':
+    def from_env(cls) -> 'JiraConfig':
         return cls(
             url=os.getenv('JIRA_URL', ''),
             username=os.getenv('JIRA_USERNAME', ''),
@@ -63,7 +63,7 @@ class ProjectConfig:
 @dataclass
 class Config:
     """Main configuration container"""
-    jira: JIRAConfig
+    jira: JiraConfig
     ai: AIConfig
     project: ProjectConfig
     config_file: str = ".env"  # Add config file path for display
@@ -79,7 +79,7 @@ class Config:
             env_file = "environment variables"
 
         return cls(
-            jira=JIRAConfig.from_env(),
+            jira=JiraConfig.from_env(),
             ai=AIConfig.from_env(),
             project=ProjectConfig.from_env(),
             config_file=env_file

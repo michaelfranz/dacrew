@@ -1007,19 +1007,28 @@ def switch_repository(repo_name: str):
 @codebase_app.command("remove")
 def remove_repository(
         repo_name: str,
+        force: bool = typer.Option(False, "--force", "-f", help="Force removal without confirmation"),
         keep_embeddings: bool = typer.Option(False, "--keep-embeddings", help="Keep embeddings when removing repository"),
-        confirm: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt")
+        delete_files: bool = typer.Option(False, "--delete-files", help="Also delete the actual repository files from disk")
 ):
-    """🗑️ Remove a repository and optionally its embeddings"""
+    """🗑️ Remove a repository from the workspace
+
+    This removes the repository from workspace tracking. By default, it also removes
+    associated embeddings but keeps the actual repository files on disk.
+
+    Options:
+    - Default: Remove workspace tracking + embeddings, keep files
+    - --keep-embeddings: Remove only workspace tracking
+    - --delete-files: Also delete the repository files from disk (DANGEROUS!)
+    """
     try:
         from .codebase.codebase_manager import SimpleCodebaseManager
         from .embedding.embedding_manager import EmbeddingManager
 
-        # Initialize managers
         codebase_manager = SimpleCodebaseManager()
         embedding_manager = EmbeddingManager()
 
-        # Check if repository exists
+        # Find repository by name or ID
         repositories = codebase_manager.list_repositories()
         repo_info = None
 
@@ -1035,49 +1044,236 @@ def remove_repository(
             if repositories:
                 console.print("\n📋 Available repositories:", style="cyan")
                 for repo in repositories:
-                    console.print(f"  • {repo['repo_name']}", style="white")
+                    console.print(f"  • {repo['repo_name']} ({repo['repo_id']})", style="white")
             return
 
-        # Confirmation prompt
-        if not confirm:
-            console.print(f"🗑️ About to remove repository: {repo_info['repo_name']}", style="yellow")
-            console.print(f"📁 Path: {repo_info['actual_path']}", style="dim")
+        repo_id = repo_info['repo_id']
+        repo_display_name = repo_info['repo_name']
 
-            if not keep_embeddings:
-                console.print("⚠️ This will also delete associated embeddings", style="red")
+        # Show what will be removed
+        console.print(f"\n🗑️ Removing repository: {repo_display_name}")
+        console.print(f"📁 Repository ID: {repo_id}")
+        console.print(f"📂 Path: {repo_info.get('actual_path', 'Unknown')}")
 
-            confirm_delete = typer.confirm("Are you sure you want to continue?")
-            if not confirm_delete:
-                console.print("❌ Operation cancelled", style="yellow")
+        actions = ["✅ Remove from workspace tracking"]
+
+        if not keep_embeddings:
+            actions.append("✅ Remove embeddings and vector indices")
+        else:
+            actions.append("⏭️ Keep embeddings")
+
+        if delete_files:
+            actions.append("⚠️ DELETE REPOSITORY FILES FROM DISK")
+        else:
+            actions.append("✅ Keep repository files on disk")
+
+        console.print("\n📋 Actions:")
+        for action in actions:
+            style = "red" if "DELETE" in action else "white"
+            console.print(f"  {action}", style=style)
+
+        # Confirmation prompt (unless forced)
+        if not force:
+            if delete_files:
+                console.print("\n⚠️ WARNING: --delete-files will permanently delete the repository from disk!", style="red bold")
+            confirm = typer.confirm(f"\nProceed with removing '{repo_display_name}'?")
+            if not confirm:
+                console.print("❌ Repository removal cancelled", style="yellow")
                 return
 
-        repo_id = repo_info['repo_id']
+        # Remove repository from workspace
+        success = codebase_manager.remove_repository(repo_id, delete_files=delete_files)
 
-        # Remove embeddings first if requested
+        if not success:
+            console.print(f"❌ Failed to remove repository '{repo_display_name}' from workspace", style="red")
+            return
+
+        console.print(f"✅ Repository '{repo_display_name}' removed from workspace", style="green")
+
+        # Remove embeddings (unless keeping them)
         if not keep_embeddings:
-            console.print("🗂️ Removing embeddings...", style="cyan")
-            if embedding_manager.has_embedding(repo_id):
-                success = embedding_manager.delete_embedding(repo_id)
-                if success:
-                    console.print("✅ Embeddings removed", style="green")
+            try:
+                embedding_success = embedding_manager.delete_embedding(repo_id)
+                if embedding_success:
+                    console.print("✅ Embeddings removed successfully", style="green")
                 else:
-                    console.print("⚠️ Failed to remove embeddings", style="yellow")
-            else:
-                console.print("📝 No embeddings found", style="dim")
+                    console.print("⚠️ Failed to remove embeddings (they may not exist)", style="yellow")
+            except Exception as e:
+                console.print(f"⚠️ Warning: Failed to remove embeddings: {str(e)}", style="yellow")
 
-        # Remove repository
-        console.print("📁 Removing repository...", style="cyan")
-        success = codebase_manager.remove_codebase(repo_id)
+        if delete_files:
+            console.print("✅ Repository files deleted from disk", style="green")
 
-        if success:
-            console.print(f"✅ Successfully removed repository: {repo_info['repo_name']}", style="green")
-        else:
-            console.print(f"❌ Failed to remove repository", style="red")
+        console.print(f"\n🎉 Repository '{repo_display_name}' removal complete!", style="green bold")
 
     except ImportError as e:
         console.print(f"❌ Missing required components: {str(e)}", style="red")
     except Exception as e:
         console.print(f"❌ Error removing repository: {str(e)}", style="red")
+
+
+@codebase_app.command("clean-embeddings")
+def clean_embeddings(
+        repo_name: str = typer.Argument(None, help="Repository name/ID to clean (optional - cleans all if not specified)"),
+        force: bool = typer.Option(False, "--force", "-f", help="Force cleanup without confirmation")
+):
+    """🧹 Clean up embeddings for repositories
+
+    Remove embedding data and vector indices. This is useful for:
+    - Cleaning up after repository changes
+    - Freeing up disk space
+    - Removing stale embeddings for deleted repositories
+    """
+    try:
+        from .codebase.codebase_manager import SimpleCodebaseManager
+        from .codebase.embedding_manager import EmbeddingManager
+
+        codebase_manager = SimpleCodebaseManager()
+        embedding_manager = EmbeddingManager()
+
+        if repo_name:
+            # Clean specific repository
+            repositories = codebase_manager.list_repositories()
+            repo_info = None
+
+            for repo in repositories:
+                if repo['repo_name'] == repo_name or repo['repo_id'] == repo_name:
+                    repo_info = repo
+                    break
+
+            if not repo_info:
+                console.print(f"❌ Repository '{repo_name}' not found", style="red")
+                return
+
+            repo_id = repo_info['repo_id']
+
+            if not force:
+                confirm = typer.confirm(f"Remove embeddings for repository '{repo_info['repo_name']}'?")
+                if not confirm:
+                    console.print("❌ Embedding cleanup cancelled", style="yellow")
+                    return
+
+            success = embedding_manager.delete_embedding(repo_id)
+            if success:
+                console.print(f"✅ Embeddings cleaned for '{repo_info['repo_name']}'", style="green")
+            else:
+                console.print(f"❌ Failed to clean embeddings for '{repo_info['repo_name']}'", style="red")
+
+        else:
+            # Clean all embeddings
+            console.print("🧹 This will remove ALL embedding data and vector indices", style="yellow")
+
+            if not force:
+                confirm = typer.confirm("Are you sure you want to clean all embeddings?")
+                if not confirm:
+                    console.print("❌ Embedding cleanup cancelled", style="yellow")
+                    return
+
+            # Get all repositories and clean their embeddings
+            repositories = codebase_manager.list_repositories()
+            cleaned_count = 0
+            failed_count = 0
+
+            for repo in repositories:
+                try:
+                    success = embedding_manager.delete_embedding(repo['repo_id'])
+                    if success:
+                        cleaned_count += 1
+                        console.print(f"✅ Cleaned: {repo['repo_name']}", style="green")
+                    else:
+                        failed_count += 1
+                        console.print(f"⚠️ Failed: {repo['repo_name']}", style="yellow")
+                except Exception as e:
+                    failed_count += 1
+                    console.print(f"❌ Error cleaning {repo['repo_name']}: {str(e)}", style="red")
+
+            console.print(f"\n📊 Cleanup summary:")
+            console.print(f"  • Cleaned: {cleaned_count}")
+            console.print(f"  • Failed: {failed_count}")
+
+    except ImportError as e:
+        console.print(f"❌ Missing required components: {str(e)}", style="red")
+    except Exception as e:
+        console.print(f"❌ Error cleaning embeddings: {str(e)}", style="red")
+
+
+@codebase_app.command("purge")
+def purge_repository(
+        repo_name: str,
+        force: bool = typer.Option(False, "--force", "-f", help="Force purge without confirmation")
+):
+    """💥 DANGEROUS: Completely purge a repository
+
+    This removes EVERYTHING:
+    - Repository from workspace tracking
+    - All embeddings and vector indices
+    - Repository files from disk
+
+    ⚠️ WARNING: This action cannot be undone!
+    """
+    try:
+        from .codebase.codebase_manager import SimpleCodebaseManager
+
+        codebase_manager = SimpleCodebaseManager()
+
+        # Find repository by name or ID
+        repositories = codebase_manager.list_repositories()
+        repo_info = None
+
+        for repo in repositories:
+            if repo['repo_name'] == repo_name or repo['repo_id'] == repo_name:
+                repo_info = repo
+                break
+
+        if not repo_info:
+            console.print(f"❌ Repository '{repo_name}' not found", style="red")
+            return
+
+        console.print(f"\n💥 PURGE REPOSITORY: {repo_info['repo_name']}", style="red bold")
+        console.print(f"📁 Repository ID: {repo_info['repo_id']}")
+        console.print(f"📂 Path: {repo_info.get('actual_path', 'Unknown')}")
+
+        console.print("\n⚠️ THIS WILL PERMANENTLY DELETE:", style="red bold")
+        console.print("  • Repository from workspace", style="red")
+        console.print("  • All embeddings and indices", style="red")
+        console.print("  • All repository files from disk", style="red")
+        console.print("\n🚨 THIS ACTION CANNOT BE UNDONE!", style="red bold")
+
+        if not force:
+            # Extra confirmation for purge
+            console.print(f"\nType the repository name to confirm: {repo_info['repo_name']}")
+            confirmation = typer.prompt("Repository name")
+
+            if confirmation != repo_info['repo_name']:
+                console.print("❌ Repository name mismatch. Purge cancelled.", style="red")
+                return
+
+            final_confirm = typer.confirm("Are you absolutely sure you want to purge this repository?")
+            if not final_confirm:
+                console.print("❌ Repository purge cancelled", style="yellow")
+                return
+
+        # This is equivalent to remove with delete_files=True and keep_embeddings=False
+        success = codebase_manager.remove_repository(repo_info['repo_id'], delete_files=True)
+
+        if success:
+            # Also clean embeddings
+            try:
+                from .embedding.embedding_manager import EmbeddingManager
+                embedding_manager = EmbeddingManager()
+                embedding_manager.delete_embedding(repo_info['repo_id'])
+            except Exception as e:
+                console.print(f"⚠️ Warning: Failed to clean embeddings: {str(e)}", style="yellow")
+
+            console.print(f"\n💥 Repository '{repo_info['repo_name']}' has been completely purged", style="red bold")
+        else:
+            console.print(f"❌ Failed to purge repository '{repo_info['repo_name']}'", style="red")
+
+    except ImportError as e:
+        console.print(f"❌ Missing required components: {str(e)}", style="red")
+    except Exception as e:
+        console.print(f"❌ Error purging repository: {str(e)}", style="red")
+
 
 # ============================================================================
 # Main CLI Entry Point

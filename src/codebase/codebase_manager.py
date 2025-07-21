@@ -273,7 +273,7 @@ class SimpleCodebaseManager:
 
         return existing_path, repos_info["repositories"][repo_id]["branch"]
 
-    def switch_codebase(self, repo_identifier: str) -> bool:
+    def set_current_codebase(self, repo_identifier: str) -> bool:
         """Switch to a different repository by repo_id or repo_name"""
         repos_info = self.get_repositories_info()
 

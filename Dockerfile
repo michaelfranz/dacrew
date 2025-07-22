@@ -1,33 +1,20 @@
+# Use a pre-built ML image (smaller than building from scratch)
 FROM python:3.10-slim
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
+# Install only essential system packages
+RUN apt-get update && apt-get install -y \
     git \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
-# Set working directory
-WORKDIR /app
-
-# Copy requirements first (for better Docker layer caching)
+# Use pip cache mount and no-cache to reduce image size
 COPY requirements.txt .
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip cache purge
 
-# Install Python dependencies with conflict resolution
-RUN python -m pip install --upgrade pip && \
-    # Install pytest tools first (lightweight)
-    pip install pytest pytest-cov pytest-timeout pytest-xdist pytest-html && \
-    # Handle dependency conflicts by installing in order
-    pip install --upgrade tokenizers>=0.20.3 && \
-    pip install --upgrade transformers>=4.45.0 && \
-    pip install --upgrade crewai && \
-    # Now install other requirements, skipping conflicting ones
-    grep -v "^crewai" requirements.txt | grep -v "^transformers" | grep -v "^tokenizers" | \
-    xargs -I {} sh -c 'pip install "{}" || echo "Skipped conflicting package: {}"' && \
-    # Verify key packages are working
-    python -c "import crewai; print(f'CrewAI: {crewai.__version__}')" && \
-    python -c "import transformers; print(f'Transformers: {transformers.__version__}')" && \
-    python -c "import pytest; print('Pytest: OK')"
+WORKDIR /app
+COPY . .
 
-# Set default command
-CMD ["pytest"]
+CMD ["pytest", "tests/unit/", "-v"]

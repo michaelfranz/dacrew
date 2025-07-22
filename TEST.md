@@ -16,11 +16,11 @@ This document tracks the testing status of all DaCrew command-line features for 
 | **Workspace Management**    |                 |             |                                                                           |
 | Initialize workspace        | ✅               | ❌           | `dacrew codebase init` - Sets up new workspace configuration              |
 | **Repository Management**   |                 |             |                                                                           |
-| Add repository              | ❌               | ❌           | `dacrew codebase add` - Adds new repository to workspace                  |
+| Add repository              | ✅               | ❌           | `dacrew codebase add` - Adds new repository to workspace                  |
 | List repositories           | ✅               | ❌           | `dacrew codebase list` - Shows all configured repositories                |
 | Show current repository     | ✅               | ❌           | `dacrew codebase current` - Displays active repository details            |
 | Switch repository           | ✅               | ❌           | `dacrew codebase switch` - Changes active repository context              |
-| Remove repository           | ❌               | ❌           | `dacrew codebase remove` - Removes repository from workspace              |
+| Remove repository           | ✅               | ❌           | `dacrew codebase remove` - Removes repository from workspace              |
 | **Codebase Analysis**       |                 |             |                                                                           |
 | Scan codebase               | ❌               | ❌           | `dacrew codebase scan` - Analyzes code structure and dependencies         |
 | Index codebase              | ❌               | ❌           | `dacrew codebase index` - Creates searchable embeddings index             |

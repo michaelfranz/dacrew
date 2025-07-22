@@ -429,8 +429,25 @@ class TestIssueKeyValidation(BaseTestCase):
         super().setUp()
         self.runner = CliRunner()
 
-    def test_various_invalid_key_formats(self):
+
+    @patch('src.config.Config.load')
+    @patch('src.jira_client.JiraClient')
+    @patch('src.cli.console')
+    def test_various_invalid_key_formats(self, mock_console, mock_jira_client, mock_config_load):
         """Test comprehensive set of invalid issue key formats"""
+        # Arrange - Completely mock everything to prevent network calls
+        mock_config = Mock()
+        mock_config.jira.url = "https://test-jira.atlassian.net"
+        mock_config.jira.username = "test-user"
+        mock_config.jira.api_token = "test-token"
+        mock_config_load.return_value = mock_config
+
+        # Mock the JiraClient class completely
+        mock_client_instance = Mock()
+        mock_client_instance._connect = Mock()  # Mock the _connect method
+        mock_client_instance.get_issue = Mock(return_value=None)  # Mock get_issue
+        mock_jira_client.return_value = mock_client_instance
+
         # Comprehensive list of invalid formats
         invalid_keys = [
             'abc-123',      # lowercase project key
@@ -461,6 +478,9 @@ class TestIssueKeyValidation(BaseTestCase):
                 # Assert - CLI may validate and exit with 2, or handle gracefully with 0
                 self.assertIn(result.exit_code, [0, 2],
                               f"Expected exit code 0 or 2 for invalid key: {invalid_key}, got {result.exit_code}")
+
+                # Reset mocks for next iteration
+                mock_client_instance.reset_mock()
 
     @patch('src.config.Config.load')
     @patch('src.jira_client.JiraClient')

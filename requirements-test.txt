@@ -2,7 +2,7 @@
 pytest==8.1.1
 pytest-cov
 pytest-timeout
-# pytest-xdist  # causes worker to crash for some reason
+pytest-xdist
 pytest-html
 
 # Code quality

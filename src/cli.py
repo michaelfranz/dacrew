@@ -964,47 +964,6 @@ def show_current_repository():
     except Exception as e:
         console.print(f"❌ Error getting current repository: {str(e)}", style="red")
 
-@codebase_app.command("switch")
-def switch_repository(repo_name: str):
-    """🔄 Switch to a different repository"""
-    try:
-        from .codebase.codebase_manager import SimpleCodebaseManager
-
-        codebase_manager = SimpleCodebaseManager()
-
-        # Find repository by name or ID
-        repositories = codebase_manager.list_repositories()
-        repo_info = None
-
-        for repo in repositories:
-            if repo['repo_name'] == repo_name or repo['repo_id'] == repo_name:
-                repo_info = repo
-                break
-
-        if not repo_info:
-            console.print(f"❌ Repository '{repo_name}' not found", style="red")
-
-            # Show available repositories
-            if repositories:
-                console.print("\n📋 Available repositories:", style="cyan")
-                for repo in repositories:
-                    status = "✅" if repo.get('exists', False) else "❌"
-                    console.print(f"  • {repo['repo_name']} {status}", style="white")
-            return
-
-        # Switch to repository
-        success = codebase_manager.set_current_codebase(repo_info['repo_id'])
-
-        if success:
-            console.print(f"🔄 Switched to repository: {repo_info['repo_name']}", style="green")
-            console.print(f"📁 Path: {repo_info['actual_path']}", style="dim")
-        else:
-            console.print(f"❌ Failed to switch to repository", style="red")
-
-    except ImportError as e:
-        console.print(f"❌ Missing required components: {str(e)}", style="red")
-    except Exception as e:
-        console.print(f"❌ Error switching repository: {str(e)}", style="red")
 
 @codebase_app.command("remove")
 def remove_repository(
@@ -1308,10 +1267,13 @@ def process_command(command, verbose):
         codebase_command(command, verbose)
     elif command.startswith('issues '):
         issues_command(command, verbose)
+    elif command.startswith('gen '):
+        gen_command(command, verbose)
     else:
         print(f"Unknown command: {command}")
 
 import shlex
+
 
 def codebase_command(command: str, verbose: bool):
     """
@@ -1360,6 +1322,63 @@ def issues_command(command: str, verbose: bool):
         pass
     except Exception as e:
         console.print(f"❌ Error handling issues command: {str(e)}", style="red")
+
+
+gen_app = typer.Typer(help="✨ Generate issues, code and other artifacts")
+app.add_typer(gen_app, name="gen")
+
+@gen_app.callback(invoke_without_command=True)
+def gen_callback(
+        ctx: typer.Context,
+        issue_key: str = typer.Option(..., "--issue", "-i", help="JIRA issue key (e.g., ABC-123)"),
+        auto_commit: bool = typer.Option(False, "--auto-commit", "-c", help="Commit and push if tests pass"),
+        allow_fail: bool = typer.Option(False, "--allow-fail", help="Commit and push even if tests fail"),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview generation steps without executing"),
+        skip_tests: bool = typer.Option(False, "--skip-tests", help="Skip build and test execution"),
+        branch: str = typer.Option(None, "--branch", "-b", help="Custom branch name"),
+):
+    """
+    ✨ Generate code for a single JIRA requirement.
+    """
+    if ctx.invoked_subcommand is not None:
+        return
+
+    from .workflows import perform_gen
+    perform_gen(
+        issue_key=issue_key,
+        auto_commit=auto_commit,
+        allow_fail=allow_fail,
+        dry_run=dry_run,
+        skip_tests=skip_tests,
+        branch=branch
+    )
+
+
+def gen_command(command: str, verbose: bool):
+    """
+    Handle 'issues' commands within REPL mode by delegating to the Typer app.
+    """
+    if verbose:
+        console.print(f"Handling gen command: {command}", style="dim")
+
+    try:
+        # Split the command into arguments (like shell)
+        args = shlex.split(command)
+        # Remove the leading 'issues'
+        args = args[1:]
+        if not args:
+            console.print("⚠️ No issues subcommand provided. Type 'help gen' for options.", style="yellow")
+            return
+
+        # Invoke Typer's gen_app
+        gen_app(args)
+    except SystemExit:
+        # Typer may call sys.exit(), catch it to prevent REPL from exiting
+        pass
+    except Exception as e:
+        console.print(f"❌ Error handling gen command: {str(e)}", style="red")
+
+
 # ============================================================================
 # Main CLI Entry Point
 # ============================================================================

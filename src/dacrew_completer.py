@@ -6,11 +6,19 @@ from prompt_toolkit.document import Document
 COMMANDS = {
     "codebase": [
         "init", "add", "list", "scan", "index",
-        "search", "stats", "current", "switch",
+        "search", "stats", "current",
         "remove", "clean-embeddings", "purge"
     ],
     "issues": [
         "list", "show", "create", "test-connection"
+    ],
+    "gen": [
+        "--issue", "-i",
+        "--dry-run",
+        "--auto-commit", "-c",
+        "--allow-fail",
+        "--skip-tests",
+        "--branch", "-b"
     ],
     "help": [],
     "exit": [],

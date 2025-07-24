@@ -5,6 +5,8 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from .dacrew_completer import DaCrewCompleter
+
 # Initialize Typer app and Rich console
 app = typer.Typer(
     help="🚀 DaCrew - AI-powered development crew, your team of software development assistants"
@@ -1275,6 +1277,89 @@ def purge_repository(
         console.print(f"❌ Error purging repository: {str(e)}", style="red")
 
 
+# ============================================================================
+# REPL Command Group
+# ============================================================================
+
+@app.command("repl")
+def repl(verbose: bool = typer.Option(False, "--verbose", "-v")):
+    from prompt_toolkit import PromptSession
+    session = PromptSession(completer = DaCrewCompleter())
+
+    print("Starting REPL session...")
+    if verbose:
+        print("Verbose mode is enabled.")
+
+    while True:
+        try:
+            user_input = session.prompt('>>> ')
+            if user_input.lower() in ['exit', 'quit', 'bye']:
+                break
+            process_command(user_input, verbose)
+        except KeyboardInterrupt:
+            continue
+        except EOFError:
+            break
+
+def process_command(command, verbose):
+    if verbose:
+        print(f"Processing command: {command}")
+    if command.startswith('codebase '):
+        codebase_command(command, verbose)
+    elif command.startswith('issues '):
+        issues_command(command, verbose)
+    else:
+        print(f"Unknown command: {command}")
+
+import shlex
+
+def codebase_command(command: str, verbose: bool):
+    """
+    Handle 'codebase' commands within REPL mode by delegating to the Typer app.
+    """
+    if verbose:
+        console.print(f"Handling codebase command: {command}", style="dim")
+
+    try:
+        # Split the command into arguments (like shell)
+        args = shlex.split(command)
+        # Remove the leading 'codebase'
+        args = args[1:]
+        if not args:
+            console.print("⚠️ No codebase subcommand provided. Type 'help codebase' for options.", style="yellow")
+            return
+
+        # Invoke Typer's codebase_app
+        codebase_app(args)
+    except SystemExit:
+        # Typer may call sys.exit(), catch it to prevent REPL from exiting
+        pass
+    except Exception as e:
+        console.print(f"❌ Error handling codebase command: {str(e)}", style="red")
+
+def issues_command(command: str, verbose: bool):
+    """
+    Handle 'issues' commands within REPL mode by delegating to the Typer app.
+    """
+    if verbose:
+        console.print(f"Handling issues command: {command}", style="dim")
+
+    try:
+        # Split the command into arguments (like shell)
+        args = shlex.split(command)
+        # Remove the leading 'issues'
+        args = args[1:]
+        if not args:
+            console.print("⚠️ No issues subcommand provided. Type 'help issues' for options.", style="yellow")
+            return
+
+        # Invoke Typer's issues_app
+        issues_app(args)
+    except SystemExit:
+        # Typer may call sys.exit(), catch it to prevent REPL from exiting
+        pass
+    except Exception as e:
+        console.print(f"❌ Error handling issues command: {str(e)}", style="red")
 # ============================================================================
 # Main CLI Entry Point
 # ============================================================================

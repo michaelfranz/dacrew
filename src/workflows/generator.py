@@ -53,7 +53,9 @@ def perform_gen(
         return
     console.print(f"🌱 Created branch: [cyan]{branch_name}[/cyan]")
 
-    generate_code(issue_info)
+    from .retriever import retrieve_context
+    context = retrieve_context(issue_info)
+    generate_code_with_context(issue_info, context)
 
     build_success = True
     test_success = True
@@ -110,7 +112,7 @@ def preview_generation(issue_info: dict):
     console.print(f"Will run tests: {current_dir}{os.getenv('TEST_COMMAND', './gradlew test')}")
 
 
-def generate_code(issue_info: dict):
+def generate_code_with_context(issue_info: dict, context):
     console.print("🛠 Generating code...")
     main_dir = f"{current_dir}{os.getenv('MAIN_CODE_DIR', 'src/main/java')}"
     test_dir = f"{current_dir}{os.getenv('TEST_CODE_DIR', 'src/test/java')}"

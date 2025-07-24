@@ -1,12 +1,11 @@
 """Repository-Embedding coordination layer - orchestrates between codebase and vector operations"""
 
-import os
 import json
 import logging
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Union, Tuple
-from datetime import datetime
 import platform
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, Any, List, Optional
 
 from .exceptions import EmbeddingError
 
@@ -519,6 +518,81 @@ class EmbeddingManager:
         return stats
 
     # ============================================================================
+    # Issue embeddings
+    # ============================================================================
+
+    def create_issue_embeddings(
+        self,
+        issues: List[Dict[str, Any]],
+        progress_callback: Optional[callable] = None,
+        force_rebuild: bool = False) -> Dict[str, Any]:
+            """
+            Create embeddings for JIRA issues in the current workspace.
+            """
+            repo_id = "issues"
+            embedding_dir = self.metadata.get_embedding_dir(repo_id)
+            embedding_dir.mkdir(parents=True, exist_ok=True)
+
+            if not force_rebuild and self.has_embedding(repo_id):
+                existing_metadata = self.get_embedding_metadata(repo_id)
+                if existing_metadata and existing_metadata.get("indexing_status") == "complete":
+                    if progress_callback:
+                        progress_callback("Issue embeddings already exist. Use --force to rebuild.")
+                    return existing_metadata
+
+            if progress_callback:
+                progress_callback(f"Indexing {len(issues)} JIRA issues...")
+
+            documents = []
+            for issue in issues:
+                issue_text = f"{issue.get('summary', '')}\n\n{issue.get('description', '')}"
+                documents.append({
+                    "id": issue["key"],
+                    "text": issue_text,
+                    "metadata": {
+                        "key": issue["key"],
+                        "status": issue.get("status"),
+                        "labels": issue.get("labels", [])
+                    }
+                })
+
+            vector_manager = self._get_vector_manager(repo_id)
+            collection_name = "issues_collection"
+
+            indexing_stats = vector_manager.index_documents(
+                documents=documents,
+                collection_name=collection_name,
+                force_rebuild=force_rebuild
+            )
+
+            metadata = {
+                "repo_id": repo_id,
+                "total_issues": len(issues),
+                "indexing_status": "complete",
+                "last_updated": datetime.now().isoformat(),
+                "collection_name": collection_name,
+                "indexing_duration_seconds": indexing_stats.get("duration", 0),
+            }
+            self.metadata.save(repo_id, metadata)
+
+            return metadata
+
+
+    def update_issue_embeddings(
+            self,
+            issues: List[Dict[str, Any]],
+            progress_callback: Optional[callable] = None
+        ) -> Dict[str, Any]:
+        """
+        Update the issue embeddings by rebuilding them.
+        """
+        return self.create_issue_embeddings(
+            issues,
+            progress_callback=progress_callback,
+            force_rebuild=True
+        )
+
+    # ============================================================================
     # Utility Methods
     # ============================================================================
 
@@ -556,6 +630,7 @@ class EmbeddingManager:
             return round(size_bytes / (1024 * 1024), 1)
         except:
             return 0.0
+
 
     def cleanup(self):
         """Clean up resources"""

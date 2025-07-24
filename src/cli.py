@@ -6,6 +6,9 @@ import typer
 from rich.console import Console
 
 from .dacrew_completer import DaCrewCompleter
+# Import required managers
+from .codebase.codebase_manager import SimpleCodebaseManager
+from .embedding.embedding_manager import EmbeddingManager
 
 # Initialize Typer app and Rich console
 app = typer.Typer(
@@ -224,6 +227,46 @@ def create_issue(
     except Exception as e:
         console.print(f"❌ Error creating issue: {str(e)}", style="red")
 
+
+@issues_app.command("embed")
+def embed_issues(
+        force: bool = typer.Option(False, "--force", "-f", help="Force rebuild of issue embeddings"),
+        limit: int = typer.Option(1000, "--limit", "-l", help="Maximum number of issues to fetch"),
+):
+    """
+    Create or update JIRA issue embeddings for this project.
+    """
+    try:
+        from .config import Config
+        from .jira_client import JiraClient
+
+        console.print("📥 Fetching JIRA issues...", style="cyan")
+
+        # Initialize JIRA client
+        config = Config.load()
+        client = JiraClient(config)
+
+        # Fetch all issues (paginated, if needed)
+        issues = client.search_issues("order by updated DESC", max_results=limit)
+        if not issues:
+            console.print("❌ No issues found to embed", style="yellow")
+            return
+
+        console.print(f"📊 Retrieved {len(issues)} issues. Creating embeddings...", style="cyan")
+
+        manager = EmbeddingManager()
+        result = manager.create_issue_embeddings(issues, force_rebuild=force)
+
+        console.print(
+            f"✅ Indexed {result['total_issues']} issues into '{result['collection_name']}'",
+            style="green"
+        )
+        console.print(f"Last updated: {result['last_updated']}", style="dim")
+
+    except Exception as e:
+        console.print(f"❌ Error creating issue embeddings: {str(e)}", style="red")
+
+
 @issues_app.command("test-connection")
 def test_connection_issues():
     """🔗 Test Jira connection (issues context)"""
@@ -245,6 +288,9 @@ def init_workspace():
         workspace_dir = project_root / "workspace"
         repos_dir = workspace_dir / "repos"
         embeddings_dir = workspace_dir / "embeddings"
+        embeddings_dir_codebase_dir = embeddings_dir / "codebase"
+        embeddings_docs_dir = embeddings_dir / "docs"
+        embeddings_issues_dir = embeddings_dir / "issues"
 
         console.print("🚀 Initializing workspace structure...", style="cyan")
 
@@ -252,6 +298,9 @@ def init_workspace():
         workspace_dir.mkdir(exist_ok=True)
         repos_dir.mkdir(exist_ok=True)
         embeddings_dir.mkdir(exist_ok=True)
+        embeddings_dir_codebase_dir.mkdir(exist_ok=True)
+        embeddings_docs_dir.mkdir(exist_ok=True)
+        embeddings_issues_dir.mkdir(exist_ok=True)
 
         # Create .gitkeep files to track empty directories
         for dir_path in [repos_dir, embeddings_dir]:
@@ -283,10 +332,6 @@ def add_repository(
 ):
     """➕ Add a new repository and optionally index it"""
     try:
-        # Import required managers
-        from .codebase.codebase_manager import SimpleCodebaseManager
-        from .embedding.embedding_manager import EmbeddingManager
-        
         console.print(f"🚀 Adding repository: {repo_url}", style="cyan")
         
         # Show warning if custom name was specified (not yet supported)

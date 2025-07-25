@@ -13,4 +13,9 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 from src.cli import app
 
 if __name__ == "__main__":
-    app()
+    if len(sys.argv) == 1:
+        # No arguments provided: start DaCrew REPL directly
+        app(["repl"])
+    else:
+        # Run as normal Typer CLI
+        app()

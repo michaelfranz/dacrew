@@ -1,7 +1,8 @@
-import unittest
 import sys
+import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
+
 from typer.testing import CliRunner
 
 # Explicit path setup for IDE recognition
@@ -95,7 +96,7 @@ class TestConnectionCommand(BaseTestCase):
         # Assert
         self.assertEqual(result.exit_code, 0)
         self.assertIn('❌ Jira URL not configured', result.stdout)  # FIXED: Jira not JIRA
-        self.assertIn('Please set JIRA_URL in your .env file', result.stdout)
+        self.assertIn('Please set jira.url in your config file', result.stdout)
 
     @patch('src.config.Config.load')
     def test_connection_command_empty_url(self, mock_config_load):
@@ -113,7 +114,7 @@ class TestConnectionCommand(BaseTestCase):
         # Assert
         self.assertEqual(result.exit_code, 0)
         self.assertIn('❌ Jira URL not configured', result.stdout)  # FIXED: Jira not JIRA
-        self.assertIn('Please set JIRA_URL in your .env file', result.stdout)
+        self.assertIn('Please set jira.url in your config file', result.stdout)
 
     @patch('src.config.Config.load')
     def test_connection_command_missing_username(self, mock_config_load):
@@ -131,7 +132,7 @@ class TestConnectionCommand(BaseTestCase):
         # Assert
         self.assertEqual(result.exit_code, 0)
         self.assertIn('❌ Jira username not configured', result.stdout)  # FIXED: Jira not JIRA
-        self.assertIn('Please set JIRA_USERNAME in your .env file', result.stdout)
+        self.assertIn('Please set jira.username in your config file', result.stdout)
 
     @patch('src.config.Config.load')
     def test_connection_command_empty_username(self, mock_config_load):
@@ -149,7 +150,7 @@ class TestConnectionCommand(BaseTestCase):
         # Assert
         self.assertEqual(result.exit_code, 0)
         self.assertIn('❌ Jira username not configured', result.stdout)  # FIXED: Jira not JIRA
-        self.assertIn('Please set JIRA_USERNAME in your .env file', result.stdout)
+        self.assertIn('Please set jira.username in your config file', result.stdout)
 
     @patch('src.config.Config.load')
     def test_connection_command_missing_api_token(self, mock_config_load):
@@ -167,7 +168,7 @@ class TestConnectionCommand(BaseTestCase):
         # Assert
         self.assertEqual(result.exit_code, 0)
         self.assertIn('❌ Jira API token not configured', result.stdout)  # FIXED: Jira not JIRA
-        self.assertIn('Please set JIRA_API_TOKEN in your .env file', result.stdout)
+        self.assertIn('Please set jira.api_token in your config file', result.stdout)
 
     @patch('src.config.Config.load')
     def test_connection_command_empty_api_token(self, mock_config_load):
@@ -185,7 +186,7 @@ class TestConnectionCommand(BaseTestCase):
         # Assert
         self.assertEqual(result.exit_code, 0)
         self.assertIn('❌ Jira API token not configured', result.stdout)  # FIXED: Jira not JIRA
-        self.assertIn('Please set JIRA_API_TOKEN in your .env file', result.stdout)
+        self.assertIn('Please set jira.api_token in your config file', result.stdout)
 
     @patch('src.config.Config.load')
     def test_connection_command_multiple_missing_configs(self, mock_config_load):
@@ -202,7 +203,7 @@ class TestConnectionCommand(BaseTestCase):
         
         # Assert
         self.assertEqual(result.exit_code, 0)
-        self.assertIn('❌ Jira URL not configured', result.stdout)  # FIXED: Jira not JIRA
+        self.assertIn('❌ Jira URL not configured', result.stdout)
         # Should exit early on first missing config, so username/token checks shouldn't run
         self.assertNotIn('❌ Jira username not configured', result.stdout)
 
@@ -398,7 +399,7 @@ class TestIssuesTestConnectionCommand(BaseTestCase):
         # Assert
         self.assertEqual(result.exit_code, 0)
         self.assertIn('❌ Jira URL not configured', result.stdout)
-        self.assertIn('Please set JIRA_URL in your .env file', result.stdout)
+        self.assertIn('Please set jira.url in your config file', result.stdout)
         
     @patch('src.config.Config.load')
     @patch('src.jira_client.JiraClient')
@@ -440,43 +441,48 @@ class TestConnectionCommandIntegration(BaseTestCase):
         """Set up test fixtures for integration tests"""
         super().setUp()
         self.runner = CliRunner()
-    
-    @patch.dict('os.environ', {
-        'JIRA_URL': 'https://test-jira.atlassian.net',
-        'JIRA_USERNAME': 'test-user',
-        'JIRA_API_TOKEN': 'test-token'
-    })
-    @patch('src.jira_client.JiraClient')  # FIXED: Patch at source module
-    def test_connection_with_env_vars(self, mock_jira_client):
-        """Test connection command with environment variables set"""
+
+    @patch('src.config.Config.load')
+    @patch('src.jira_client.JiraClient')
+    def test_connection_with_config(self, mock_jira_client, mock_config_load):
+        """Test connection command with configuration set"""
         # Arrange
+        mock_config = Mock()
+        mock_config.jira.url = "https://test-jira.atlassian.net"
+        mock_config.jira.username = "test-user"
+        mock_config.jira.api_token = "test-token"
+        mock_config_load.return_value = mock_config  # IMPORTANT
+
         mock_client_instance = Mock()
         mock_client_instance.test_connection.return_value = True
         mock_jira_client.return_value = mock_client_instance
-        
+
         # Act
         result = self.runner.invoke(app, ['test-connection'])
-        
+
         # Assert
         self.assertEqual(result.exit_code, 0)
-        self.assertIn('✅ Jira connection successful!', result.stdout)  # FIXED: Jira not JIRA
-        
-    @patch.dict('os.environ', {
-        'JIRA_URL': 'https://test-jira.atlassian.net',
-        'JIRA_USERNAME': 'test-user',
-        'JIRA_API_TOKEN': 'test-token'
-    })
+        self.assertIn('✅ Jira connection successful!', result.stdout)
+
+
+    @patch('src.config.Config.load')
     @patch('src.jira_client.JiraClient')
-    def test_issues_connection_with_env_vars(self, mock_jira_client):
-        """Test 'dacrew issues test-connection' command with environment variables set"""
+    def test_issues_connection_with_config(self, mock_jira_client, mock_config_load):
+        """Test 'dacrew issues test-connection' command with configuration set"""
         # Arrange
+        mock_config = Mock()
+        mock_config.jira.url = "https://test-jira.atlassian.net"
+        mock_config.jira.username = "test-user"
+        mock_config.jira.api_token = "test-token"
+        mock_config_load.return_value = mock_config
+
         mock_client_instance = Mock()
         mock_client_instance.test_connection.return_value = True
         mock_jira_client.return_value = mock_client_instance
-        
+
         # Act
         result = self.runner.invoke(app, ['issues', 'test-connection'])
-        
+
         # Assert
         self.assertEqual(result.exit_code, 0)
         self.assertIn('✅ Jira connection successful!', result.stdout)

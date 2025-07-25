@@ -49,7 +49,7 @@ class TestListIssuesCommand(BaseTestCase):
                 'updated': '2024-01-13T09:20:00.000Z'
             }
         ]
-        
+
     @patch('src.config.Config.load')
     @patch('src.jira_client.JiraClient')
     @patch('src.cli.console')
@@ -57,26 +57,24 @@ class TestListIssuesCommand(BaseTestCase):
         """Test successful listing of issues without filters"""
         # Arrange
         mock_config = Mock()
-        mock_config.project.default_project_key = "TEST"
+        mock_config.project = "TEST"  # <-- Updated for new config structure
         mock_config_load.return_value = mock_config
-        
+
         mock_client_instance = Mock()
         mock_client_instance.search_issues.return_value = self.sample_issues
         mock_jira_client.return_value = mock_client_instance
-        
+
         # Act
         result = self.runner.invoke(app, ['issues', 'list'])
-        
+
         # Assert
         self.assertEqual(result.exit_code, 0)
         mock_jira_client.assert_called_once_with(mock_config)
         mock_client_instance.search_issues.assert_called_once_with("project = TEST", max_results=10)
-        
-        # Verify console.print calls
-        self.assertTrue(mock_console.print.called)
-        # Should print JQL query and table
+
         call_args = [call[0] for call in mock_console.print.call_args_list]
         self.assertTrue(any("🔍 Searching with JQL:" in str(args) for args in call_args))
+
 
     @patch('src.config.Config.load')
     @patch('src.jira_client.JiraClient')
@@ -85,7 +83,7 @@ class TestListIssuesCommand(BaseTestCase):
         """Test listing issues with project filter"""
         # Arrange
         mock_config = Mock()
-        mock_config.project.default_project_key = "DEFAULT"
+        mock_config.project = "DEFAULT"
         mock_config_load.return_value = mock_config
         
         mock_client_instance = Mock()
@@ -106,7 +104,7 @@ class TestListIssuesCommand(BaseTestCase):
         """Test listing issues with status filter"""
         # Arrange
         mock_config = Mock()
-        mock_config.project.default_project_key = "TEST"
+        mock_config.project = "TEST"
         mock_config_load.return_value = mock_config
         
         mock_client_instance = Mock()
@@ -127,7 +125,7 @@ class TestListIssuesCommand(BaseTestCase):
         """Test listing issues with assignee filter"""
         # Arrange
         mock_config = Mock()
-        mock_config.project.default_project_key = "TEST"
+        mock_config.project = "TEST"
         mock_config_load.return_value = mock_config
         
         mock_client_instance = Mock()
@@ -148,7 +146,7 @@ class TestListIssuesCommand(BaseTestCase):
         """Test listing issues with multiple filters"""
         # Arrange
         mock_config = Mock()
-        mock_config.project.default_project_key = "DEFAULT"
+        mock_config.project = "DEFAULT"
         mock_config_load.return_value = mock_config
         
         mock_client_instance = Mock()
@@ -173,7 +171,7 @@ class TestListIssuesCommand(BaseTestCase):
         """Test listing issues with custom limit"""
         # Arrange
         mock_config = Mock()
-        mock_config.project.default_project_key = "TEST"
+        mock_config.project = "TEST"
         mock_config_load.return_value = mock_config
         
         mock_client_instance = Mock()
@@ -194,7 +192,7 @@ class TestListIssuesCommand(BaseTestCase):
         """Test listing issues when no default project is configured"""
         # Arrange
         mock_config = Mock()
-        mock_config.project.default_project_key = ""
+        mock_config.project = ""
         mock_config_load.return_value = mock_config
         
         mock_client_instance = Mock()
@@ -215,7 +213,7 @@ class TestListIssuesCommand(BaseTestCase):
         """Test listing issues when no results are found"""
         # Arrange
         mock_config = Mock()
-        mock_config.project.default_project_key = "TEST"
+        mock_config.project = "TEST"
         mock_config_load.return_value = mock_config
         
         mock_client_instance = Mock()
@@ -240,7 +238,7 @@ class TestListIssuesCommand(BaseTestCase):
         """Test that long summaries are properly truncated in the table"""
         # Arrange
         mock_config = Mock()
-        mock_config.project.default_project_key = "TEST"
+        mock_config.project = "TEST"
         mock_config_load.return_value = mock_config
         
         mock_client_instance = Mock()
@@ -279,7 +277,7 @@ class TestListIssuesCommand(BaseTestCase):
         """Test handling of JiraClient creation exception"""
         # Arrange
         mock_config = Mock()
-        mock_config.project.default_project_key = "TEST"
+        mock_config.project = "TEST"
         mock_config_load.return_value = mock_config
         
         mock_jira_client.side_effect = Exception("Client creation failed")
@@ -301,7 +299,7 @@ class TestListIssuesCommand(BaseTestCase):
         """Test handling of search_issues exception"""
         # Arrange
         mock_config = Mock()
-        mock_config.project.default_project_key = "TEST"
+        mock_config.project = "TEST"
         mock_config_load.return_value = mock_config
         
         mock_client_instance = Mock()
@@ -337,7 +335,7 @@ class TestListIssuesCommand(BaseTestCase):
         """Test listing issues using short option flags"""
         # Arrange
         mock_config = Mock()
-        mock_config.project.default_project_key = "DEFAULT"
+        mock_config.project = "DEFAULT"
         mock_config_load.return_value = mock_config
         
         mock_client_instance = Mock()

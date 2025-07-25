@@ -11,3 +11,4 @@
 # Model cache (optional - these can be large)
 .cache/
 
+/.dacrew-example.yml

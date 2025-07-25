@@ -5,9 +5,9 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-from .dacrew_completer import DaCrewCompleter
 # Import required managers
 from .codebase.codebase_manager import SimpleCodebaseManager
+from .dacrew_completer import DaCrewCompleter
 from .embedding.embedding_manager import EmbeddingManager
 
 # Initialize Typer app and Rich console
@@ -19,6 +19,143 @@ console = Console()
 # ============================================================================
 # Test Connection Command (Top-level)
 # ============================================================================
+
+GLOBAL_EXAMPLE_CONFIG_CONTENT = """
+# ~/.dacrew/config.yml
+# Global configuration for DaCrew.
+# Copy this file to ~/.dacrew/config.yml and update it with your values.
+#
+# =====================================================================
+# Jira Configuration
+# =====================================================================
+jira:
+  # URL to your Jira instance (e.g., https://yourcompany.atlassian.net)
+  url: "https://example.atlassian.net"
+
+  # Jira username (often your email address)
+  username: "your.email@example.com"
+
+  # Jira API token (generate this from Jira account settings)
+  api_token: "your-api-token"
+
+# =====================================================================
+# AI and Embeddings
+# =====================================================================
+ai:
+  # API key for OpenAI or other providers
+  openai_api_key: "your-openai-api-key"
+
+  # Model for code generation and other AI tasks
+  model: "gpt-4"
+
+  # Temperature controls randomness (0.0 = deterministic)
+  temperature: 0.7
+
+  # Embedding model for code and issues (HuggingFace or OpenAI)
+  embeddings_model: "sentence-transformers/all-MiniLM-L6-v2"
+
+  # Directory for Chroma persistence (vector database)
+  chroma_persist_directory: "~/.dacrew/chroma"
+
+# =====================================================================
+# Additional defaults or secrets can be added here
+# =====================================================================
+"""
+
+PROJECT_EXAMPLE_CONFIG_CONTENT = """
+# .dacrew-example.yml
+# Project-specific configuration for DaCrew.
+# Copy this file to .dacrew.yml in your project root and update it with your values.
+#
+# Values here override or extend those in ~/.dacrew/config.yml for this project.
+
+# =====================================================================
+# Project Configuration
+# =====================================================================
+project:
+  # Unique identifier for this project (must match workspace name)
+  key: "my-project"
+
+  # Jira project key (e.g., ABC)
+  jira_project_key: "ABC"
+
+# =====================================================================
+# Build & Test Commands
+# =====================================================================
+commands:
+  # Build command relative to the workspace/current directory
+  build: "./gradlew build"
+
+  # Test command relative to the workspace/current directory
+  test: "./gradlew test"
+
+# =====================================================================
+# Git Settings
+# =====================================================================
+git:
+  # Default branch prefix for feature branches
+  default_branch_prefix: "feature/"
+
+  # Commit message template
+  # Available placeholders: {ISSUE_ID}, {ISSUE_TITLE}
+  commit_template: "Implementing {ISSUE_ID}: {ISSUE_TITLE}"
+
+# =====================================================================
+# Jira Configuration (Optional Overrides)
+# =====================================================================
+jira:
+  # Override the global Jira URL if needed (optional)
+  # url: "https://custom-jira-instance.atlassian.net"
+
+# =====================================================================
+# AI Configuration (Optional Overrides)
+# =====================================================================
+ai:
+  # Project-specific AI settings (if needed)
+  # model: "gpt-4"
+  # temperature: 0.5
+
+# =====================================================================
+# Documentation and Knowledge Base
+# =====================================================================
+docs:
+  # Paths to domain documentation or knowledge files to embed
+  # - "docs/architecture.md"
+  # - "docs/design-specs/"
+"""
+
+
+@app.command("init")
+def init_project():
+    """
+    Initialize dacrew for the current project and global environment.
+    """
+    project_dir = Path.cwd()
+    home_dir = Path.home() / ".dacrew"
+
+    # Create ~/.dacrew folder if needed
+    home_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create global config-example.yml if it doesn't exist
+    global_example_config = home_dir / "config-example.yml"
+    if not global_example_config.exists():
+        global_example_config.write_text(GLOBAL_EXAMPLE_CONFIG_CONTENT)
+        console.print(f"✅ Created global config example: {global_example_config}", style="green")
+        console.print("💡 Copy this to ~/.dacrew/config.yml and customize it.", style="yellow")
+
+    elif not (home_dir / "config.yml").exists():
+        console.print("⚠️ Global config ~/.dacrew/config.yml not found.", style="yellow")
+        console.print(f"   Copy and edit: {global_example_config}", style="dim")
+
+    # Create .dacrew-example.yml for the current project
+    project_example_config = project_dir / ".dacrew-example.yml"
+    if not project_example_config.exists():
+        project_example_config.write_text(PROJECT_EXAMPLE_CONFIG_CONTENT)
+        console.print(f"✅ Created project config example: {project_example_config}", style="green")
+        console.print("💡 Copy this to .dacrew.yml and customize it.", style="yellow")
+    else:
+        console.print("⚠️ Project config example already exists (.dacrew-example.yml).", style="yellow")
+
 
 @app.command("test-connection")
 def test_jira_connection():
@@ -34,17 +171,17 @@ def test_jira_connection():
         # Validate configuration
         if not config.jira.url:
             console.print("❌ Jira URL not configured", style="red")
-            console.print("Please set JIRA_URL in your .env file", style="yellow")
+            console.print("Please set jira.url in your config file", style="yellow")
             return
 
         if not config.jira.username:
             console.print("❌ Jira username not configured", style="red")
-            console.print("Please set JIRA_USERNAME in your .env file", style="yellow")
+            console.print("Please set jira.username in your config file", style="yellow")
             return
 
         if not config.jira.api_token:
             console.print("❌ Jira API token not configured", style="red")
-            console.print("Please set JIRA_API_TOKEN in your .env file", style="yellow")
+            console.print("Please set jira.api_token in your config file", style="yellow")
             return
 
         # Test connection
@@ -61,12 +198,14 @@ def test_jira_connection():
     except Exception as e:
         console.print(f"❌ Error testing connection: {str(e)}", style="red")
 
+
 # ============================================================================
 # Issues Command Group
 # ============================================================================
 
 issues_app = typer.Typer(help="🎫 Manage Jira issues and tickets")
 app.add_typer(issues_app, name="issues")
+
 
 @issues_app.command("list")
 def list_issues(
@@ -88,8 +227,8 @@ def list_issues(
 
         if project:
             jql_parts.append(f"project = {project}")
-        elif config.project.default_project_key:
-            jql_parts.append(f"project = {config.project.default_project_key}")
+        elif isinstance(config.project, dict) and "jira_project_key" in config.project:
+            jql_parts.append(f"project = {config.project['jira_project_key']}")
 
         if status:
             jql_parts.append(f"status = '{status}'")
@@ -129,6 +268,7 @@ def list_issues(
 
     except Exception as e:
         console.print(f"❌ Error listing issues: {str(e)}", style="red")
+
 
 @issues_app.command("show")
 def show_issue(issue_key: str):
@@ -174,6 +314,7 @@ def show_issue(issue_key: str):
 
     except Exception as e:
         console.print(f"❌ Error showing issue: {str(e)}", style="red")
+
 
 @issues_app.command("create")
 def create_issue(
@@ -273,12 +414,14 @@ def test_connection_issues():
     # Reuse the main test-connection logic
     test_jira_connection()
 
+
 # ============================================================================
 # Codebase Command Group
 # ============================================================================
 
 codebase_app = typer.Typer(help="📁 Manage repository codebases")
 app.add_typer(codebase_app, name="codebase")
+
 
 @codebase_app.command("init")
 def init_workspace():
@@ -322,32 +465,35 @@ def init_workspace():
     except Exception as e:
         console.print(f"❌ Error initializing workspace: {str(e)}", style="red")
 
+
 @codebase_app.command("add")
 def add_repository(
-    repo_url: str,
-    name: str = typer.Option(None, "--name", "-n", help="Custom name for the repository (note: currently not implemented)"),
-    branch: str = typer.Option(None, "--branch", "-b", help="Specific branch to clone"),
-    shallow: bool = typer.Option(True, "--shallow/--full", help="Perform shallow clone (default: True)"),
-    auto_index: bool = typer.Option(True, "--index/--no-index", help="Automatically create embeddings after adding (default: True)")
+        repo_url: str,
+        name: str = typer.Option(None, "--name", "-n",
+                                 help="Custom name for the repository (note: currently not implemented)"),
+        branch: str = typer.Option(None, "--branch", "-b", help="Specific branch to clone"),
+        shallow: bool = typer.Option(True, "--shallow/--full", help="Perform shallow clone (default: True)"),
+        auto_index: bool = typer.Option(True, "--index/--no-index",
+                                        help="Automatically create embeddings after adding (default: True)")
 ):
     """➕ Add a new repository and optionally index it"""
     try:
         console.print(f"🚀 Adding repository: {repo_url}", style="cyan")
-        
+
         # Show warning if custom name was specified (not yet supported)
         if name:
             console.print("⚠️ Custom name parameter is not yet supported by the codebase manager", style="yellow")
             console.print("   Repository will use the default name from the URL", style="dim")
-        
+
         # Initialize codebase manager
         codebase_manager = SimpleCodebaseManager()
-        
+
         # Add the repository
         console.print("📥 Cloning repository...", style="yellow")
-        
+
         def progress_callback(message):
             console.print(f"   {message}", style="dim")
-        
+
         try:
             # Call the method with the correct parameters
             repo_path, detected_branch = codebase_manager.add_codebase(
@@ -356,46 +502,48 @@ def add_repository(
                 shallow=shallow,
                 progress_callback=progress_callback
             )
-            
+
             if not repo_path:
                 console.print("❌ Failed to add repository", style="red")
                 return
-                
+
             console.print(f"✅ Successfully added repository to: {repo_path}", style="green")
             console.print(f"🌿 Branch: {detected_branch}", style="dim")
-            
+
             # Get repository info to show more details
             repo_info = codebase_manager.get_current_repository_info()
             if repo_info:
                 console.print(f"📝 Repository name: {repo_info['repo_name']}", style="dim")
                 console.print(f"🆔 Repository ID: {repo_info['repo_id']}", style="dim")
                 console.print(f"🎯 Set as current repository", style="green")
-            
+
         except Exception as e:
             console.print(f"❌ Failed to clone repository: {str(e)}", style="red")
             return
-        
+
         # Auto-index if requested
         if auto_index:
             console.print("\n🗂️ Creating embeddings for repository...", style="cyan")
-            
+
             try:
                 embedding_manager = EmbeddingManager()
-                
+
                 def embedding_progress_callback(message):
                     console.print(f"   {message}", style="dim")
-                
+
                 metadata = embedding_manager.create_embedding_for_current_repo(
                     progress_callback=embedding_progress_callback
                 )
-                
+
                 console.print(f"✅ Embeddings created successfully!", style="green")
-                console.print(f"📊 Indexed {metadata.get('total_files', 0)} files into {metadata.get('total_chunks', 0)} chunks", style="dim")
-                
+                console.print(
+                    f"📊 Indexed {metadata.get('total_files', 0)} files into {metadata.get('total_chunks', 0)} chunks",
+                    style="dim")
+
             except Exception as e:
                 console.print(f"⚠️ Repository added but indexing failed: {str(e)}", style="yellow")
                 console.print("💡 You can index later with: dacrew codebase index", style="dim")
-        
+
         # Show next steps
         console.print("\n🎉 Repository setup complete!", style="bold green")
         console.print("\n💡 What you can do next:", style="bold yellow")
@@ -404,12 +552,13 @@ def add_repository(
         console.print("• Search the code: dacrew codebase search 'your query'", style="white")
         console.print("• List all repos: dacrew codebase list", style="white")
         console.print("• Show current repo: dacrew codebase current", style="white")
-        
+
     except ImportError as e:
         console.print(f"❌ Missing required components: {str(e)}", style="red")
         console.print("💡 Make sure all codebase and embedding modules are properly set up", style="yellow")
     except Exception as e:
         console.print(f"❌ Error adding repository: {str(e)}", style="red")
+
 
 @codebase_app.command("list")
 def list_repositories():
@@ -461,12 +610,12 @@ def list_repositories():
             # Calculate size
             try:
                 size_bytes = sum(f.stat().st_size for f in repo_dir.rglob('*') if f.is_file())
-                if size_bytes < 1024*1024:  # < 1MB
-                    size_str = f"{size_bytes//1024}KB"
-                elif size_bytes < 1024*1024*1024:  # < 1GB
-                    size_str = f"{size_bytes//(1024*1024)}MB"
+                if size_bytes < 1024 * 1024:  # < 1MB
+                    size_str = f"{size_bytes // 1024}KB"
+                elif size_bytes < 1024 * 1024 * 1024:  # < 1GB
+                    size_str = f"{size_bytes // (1024 * 1024)}MB"
                 else:
-                    size_str = f"{size_bytes//(1024*1024*1024):.1f}GB"
+                    size_str = f"{size_bytes // (1024 * 1024 * 1024):.1f}GB"
             except:
                 size_str = "Unknown"
 
@@ -486,12 +635,15 @@ def list_repositories():
     except Exception as e:
         console.print(f"❌ Error listing repositories: {str(e)}", style="red")
 
+
 @codebase_app.command("scan")
 def scan_codebase(
         path: str = typer.Option(None, "--path", "-p", help="Path to scan (default: workspace/repos)"),
         repo: str = typer.Option(None, "--repo", "-r", help="Specific repository to scan"),
-        exclude: str = typer.Option(".git,node_modules,__pycache__,.pytest_cache,.venv,venv", "--exclude", "-e", help="Comma-separated list of directories to exclude"),
-        extensions: str = typer.Option("py,js,ts,java,cpp,c,h,rb,go,rs", "--extensions", "-x", help="Comma-separated list of file extensions to include"),
+        exclude: str = typer.Option(".git,node_modules,__pycache__,.pytest_cache,.venv,venv", "--exclude", "-e",
+                                    help="Comma-separated list of directories to exclude"),
+        extensions: str = typer.Option("py,js,ts,java,cpp,c,h,rb,go,rs", "--extensions", "-x",
+                                       help="Comma-separated list of file extensions to include"),
         output: str = typer.Option(None, "--output", "-o", help="Output file path (optional)")
 ):
     """🔍 Scan and analyze codebase structure in workspace/repos"""
@@ -645,7 +797,8 @@ def scan_codebase(
                                 with open(item, 'r', encoding='utf-8', errors='ignore') as f:
                                     lines = f.readlines()
                                     total_lines = len(lines)
-                                    code_lines = len([line for line in lines if line.strip() and not line.strip().startswith('#')])
+                                    code_lines = len(
+                                        [line for line in lines if line.strip() and not line.strip().startswith('#')])
                                     stats['total_lines'] += total_lines
                                     stats['code_lines'] += code_lines
                             except Exception:
@@ -712,6 +865,7 @@ def scan_codebase(
 
     except Exception as e:
         console.print(f"❌ Error scanning codebase: {str(e)}", style="red")
+
 
 @codebase_app.command("index")
 def index_codebase(
@@ -887,6 +1041,7 @@ def search_codebase(
     except Exception as e:
         console.print(f"❌ Error searching codebase: {str(e)}", style="red")
 
+
 @codebase_app.command("stats")
 def show_codebase_stats():
     """📊 Show codebase indexing statistics"""
@@ -939,6 +1094,7 @@ def show_codebase_stats():
 
     except Exception as e:
         console.print(f"❌ Error getting stats: {str(e)}", style="red")
+
 
 @codebase_app.command("current")
 def show_current_repository():
@@ -1014,8 +1170,10 @@ def show_current_repository():
 def remove_repository(
         repo_name: str,
         force: bool = typer.Option(False, "--force", "-f", help="Force removal without confirmation"),
-        keep_embeddings: bool = typer.Option(False, "--keep-embeddings", help="Keep embeddings when removing repository"),
-        delete_files: bool = typer.Option(False, "--delete-files", help="Also delete the actual repository files from disk")
+        keep_embeddings: bool = typer.Option(False, "--keep-embeddings",
+                                             help="Keep embeddings when removing repository"),
+        delete_files: bool = typer.Option(False, "--delete-files",
+                                          help="Also delete the actual repository files from disk")
 ):
     """🗑️ Remove a repository from the workspace
 
@@ -1081,7 +1239,8 @@ def remove_repository(
         # Confirmation prompt (unless forced)
         if not force:
             if delete_files:
-                console.print("\n⚠️ WARNING: --delete-files will permanently delete the repository from disk!", style="red bold")
+                console.print("\n⚠️ WARNING: --delete-files will permanently delete the repository from disk!",
+                              style="red bold")
             confirm = typer.confirm(f"\nProceed with removing '{repo_display_name}'?")
             if not confirm:
                 console.print("❌ Repository removal cancelled", style="yellow")
@@ -1120,7 +1279,8 @@ def remove_repository(
 
 @codebase_app.command("clean-embeddings")
 def clean_embeddings(
-        repo_name: str = typer.Argument(None, help="Repository name/ID to clean (optional - cleans all if not specified)"),
+        repo_name: str = typer.Argument(None,
+                                        help="Repository name/ID to clean (optional - cleans all if not specified)"),
         force: bool = typer.Option(False, "--force", "-f", help="Force cleanup without confirmation")
 ):
     """🧹 Clean up embeddings for repositories
@@ -1288,7 +1448,7 @@ def purge_repository(
 @app.command("repl")
 def repl(verbose: bool = typer.Option(False, "--verbose", "-v")):
     from prompt_toolkit import PromptSession
-    session = PromptSession(completer = DaCrewCompleter())
+    session = PromptSession(completer=DaCrewCompleter())
 
     print("Starting REPL session...")
     if verbose:
@@ -1305,6 +1465,7 @@ def repl(verbose: bool = typer.Option(False, "--verbose", "-v")):
         except EOFError:
             break
 
+
 def process_command(command, verbose):
     if verbose:
         print(f"Processing command: {command}")
@@ -1316,6 +1477,7 @@ def process_command(command, verbose):
         gen_command(command, verbose)
     else:
         print(f"Unknown command: {command}")
+
 
 import shlex
 
@@ -1344,6 +1506,7 @@ def codebase_command(command: str, verbose: bool):
     except Exception as e:
         console.print(f"❌ Error handling codebase command: {str(e)}", style="red")
 
+
 def issues_command(command: str, verbose: bool):
     """
     Handle 'issues' commands within REPL mode by delegating to the Typer app.
@@ -1371,6 +1534,7 @@ def issues_command(command: str, verbose: bool):
 
 gen_app = typer.Typer(help="✨ Generate issues, code and other artifacts")
 app.add_typer(gen_app, name="gen")
+
 
 @gen_app.callback(invoke_without_command=True)
 def gen_callback(
@@ -1431,6 +1595,7 @@ def gen_command(command: str, verbose: bool):
 def main():
     """Main CLI entry point"""
     app()
+
 
 if __name__ == "__main__":
     main()

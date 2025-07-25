@@ -522,61 +522,53 @@ class EmbeddingManager:
     # ============================================================================
 
     def create_issue_embeddings(
-        self,
-        issues: List[Dict[str, Any]],
-        progress_callback: Optional[callable] = None,
-        force_rebuild: bool = False) -> Dict[str, Any]:
-            """
-            Create embeddings for JIRA issues in the current workspace.
-            """
-            repo_id = "issues"
-            embedding_dir = self.metadata.get_embedding_dir(repo_id)
-            embedding_dir.mkdir(parents=True, exist_ok=True)
+            self,
+            issues: List[Dict[str, Any]],
+            progress_callback: Optional[callable] = None,
+            force_rebuild: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Create embeddings for JIRA issues in the current workspace.
+        """
+        repo_id = "issues"
+        embedding_dir = self.metadata.get_embedding_dir(repo_id)
+        embedding_dir.mkdir(parents=True, exist_ok=True)
 
-            if not force_rebuild and self.has_embedding(repo_id):
-                existing_metadata = self.get_embedding_metadata(repo_id)
-                if existing_metadata and existing_metadata.get("indexing_status") == "complete":
-                    if progress_callback:
-                        progress_callback("Issue embeddings already exist. Use --force to rebuild.")
-                    return existing_metadata
+        if not force_rebuild and self.has_embedding(repo_id):
+            existing_metadata = self.get_embedding_metadata(repo_id)
+            if existing_metadata and existing_metadata.get("indexing_status") == "complete":
+                if progress_callback:
+                    progress_callback("Issue embeddings already exist. Use --force to rebuild.")
+                return existing_metadata
 
-            if progress_callback:
-                progress_callback(f"Indexing {len(issues)} JIRA issues...")
+        if progress_callback:
+            progress_callback(f"Indexing {len(issues)} JIRA issues...")
 
-            documents = []
-            for issue in issues:
-                issue_text = f"{issue.get('summary', '')}\n\n{issue.get('description', '')}"
-                documents.append({
-                    "id": issue["key"],
-                    "text": issue_text,
-                    "metadata": {
-                        "key": issue["key"],
-                        "status": issue.get("status"),
-                        "labels": issue.get("labels", [])
-                    }
-                })
+        vector_manager = self._get_vector_manager(repo_id)
+        collection_name = "issues_collection"
 
-            vector_manager = self._get_vector_manager(repo_id)
-            collection_name = "issues_collection"
+        # Rebuild collection if forced
+        if force_rebuild:
+            vector_manager.delete_collection(collection_name)
 
-            indexing_stats = vector_manager.index_documents(
-                documents=documents,
-                collection_name=collection_name,
-                force_rebuild=force_rebuild
-            )
+        # Add all issues in a single batch
+        indexing_stats = vector_manager.add_issues_batch(
+            issues=issues,
+            collection_name=collection_name
+        )
 
-            metadata = {
-                "repo_id": repo_id,
-                "total_issues": len(issues),
-                "indexing_status": "complete",
-                "last_updated": datetime.now().isoformat(),
-                "collection_name": collection_name,
-                "indexing_duration_seconds": indexing_stats.get("duration", 0),
-            }
-            self.metadata.save(repo_id, metadata)
+        metadata = {
+            "repo_id": repo_id,
+            "total_issues": len(issues),
+            "indexing_status": "complete" if indexing_stats.get("success") else "failed",
+            "last_updated": datetime.now().isoformat(),
+            "collection_name": collection_name,
+            "added": indexing_stats.get("added", 0),
+            "failed": indexing_stats.get("failed", 0),
+        }
+        self.metadata.save(repo_id, metadata)
 
-            return metadata
-
+        return metadata
 
     def update_issue_embeddings(
             self,

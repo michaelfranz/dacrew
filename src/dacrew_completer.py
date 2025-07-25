@@ -10,7 +10,21 @@ COMMANDS = {
         "remove", "clean-embeddings", "purge"
     ],
     "issues": [
-        "list", "show", "create", "test-connection"
+        "list",
+        "show",
+        "create",
+        {
+            "embed": [
+                "--force", "-f",
+                "--limit", "-l",
+                "--project", "-p",
+                "--status", "-s",
+                "--assignee", "-a",
+                "--incremental", "-i",
+                "--dry-run"
+            ]
+        },
+        "test-connection"
     ],
     "gen": [
         "--issue", "-i",

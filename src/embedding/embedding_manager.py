@@ -1,13 +1,14 @@
 """
 Embedding management for DaCrew - Handles embeddings for codebase, issues, and documents.
 """
-
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List
 
 from rich.console import Console
+
+from .codebase_embedding_manager import CodebaseEmbeddingManager
+from .embedding_utils import _clean_directory
 
 console = Console()
 
@@ -29,6 +30,7 @@ class EmbeddingManager:
         self.codebase_dir = self.base_dir / "codebase"
         self.issues_dir = self.base_dir / "issues"
         self.documents_dir = self.base_dir / "documents"
+        self.codebase_manager = CodebaseEmbeddingManager(project_key, self.codebase_dir)
 
         self._ensure_directories()
 
@@ -45,12 +47,7 @@ class EmbeddingManager:
     # INDEXING
     # ------------------------
     def index_codebase(self):
-        """
-        Index source code into vector embeddings.
-        """
-        path = ""
-        console.print(f"📦 Indexing codebase at: {path}", style="cyan")
-        # TODO: Walk files, chunk code, embed, and store in codebase vector DB.
+        self.codebase_manager.index()
 
     def index_issues(self):
         """
@@ -70,11 +67,12 @@ class EmbeddingManager:
         # TODO: Extract text (PDF, Word, etc.), embed, and store.
 
     def index_sources(self, sources: list[str], force):
+        # Do these in parallel
         if "codebase" in sources:
             self.index_codebase()
-        elif "issues" in sources:
+        if "issues" in sources:
             self.index_issues()
-        elif "documents" in sources:
+        if "documents" in sources:
             self.index_documents()
 
     # ------------------------
@@ -106,27 +104,15 @@ class EmbeddingManager:
     # ------------------------
     # CLEANING
     # ------------------------
-    @staticmethod
-    def _clean_directory(directory: Path, name: str):
-        if not directory.exists() or not any(directory.iterdir()):
-            console.print(f"⚠️ No {name} embeddings found to clean.", style="yellow")
-            return
-
-        try:
-            shutil.rmtree(directory)
-            directory.mkdir(parents=True, exist_ok=True)  # Recreate the empty directory
-            console.print(f"✅ {name.capitalize()} embeddings cleaned successfully.", style="green")
-        except Exception as e:
-            console.print(f"❌ Failed to clean {name} embeddings: {e}", style="red")
 
     def clean_codebase(self):
-        self._clean_directory(self.codebase_dir, "codebase")
+        self.codebase_manager.clean()
 
     def clean_issues(self):
-        self._clean_directory(self.issues_dir, "issues")
+        _clean_directory(self.issues_dir, "issues")
 
     def clean_documents(self):
-        self._clean_directory(self.documents_dir, "documents")
+        _clean_directory(self.documents_dir, "documents")
 
     def clean(self, sources: List[str]):
         if "codebase" in sources:

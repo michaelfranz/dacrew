@@ -1,8 +1,11 @@
 """Configuration management for DaCrew - AI-powered Development Crew"""
 
-import yaml
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import List
+
+import yaml
+from pydantic import SecretStr
 
 
 @dataclass
@@ -11,7 +14,7 @@ class JiraConfig:
     url: str
     jira_project_key: str
     user_id: str
-    api_token: str = ""  # Still only in global config for security
+    api_token: str = ""   # From global config only
 
 
 @dataclass
@@ -20,7 +23,36 @@ class AIConfig:
     model: str = "gpt-4"
     temperature: float = 0.7
     embeddings_model: str = "sentence-transformers/all-MiniLM-L6-v2"
-    openai_api_key: str = ""  # From global config only
+    openai_api_key: SecretStr = SecretStr("")  # From global config only
+
+
+# ------------------------------
+# Embedding Configs
+# ------------------------------
+@dataclass
+class CodebaseEmbeddingConfig:
+    path: str = "./"
+    include_patterns: List[str] = field(default_factory=lambda: ["src/**/*.java", "src/**/*.py"])
+    exclude_patterns: List[str] = field(default_factory=lambda: ["node_modules/**", "build/**"])
+
+
+@dataclass
+class IssuesEmbeddingConfig:
+    include_statuses: List[str] = field(default_factory=lambda: ["To Do", "In Progress", "Done"])
+    exclude_statuses: List[str] = field(default_factory=lambda: ["Deleted", "Archived"])
+
+
+@dataclass
+class DocumentsEmbeddingConfig:
+    paths: List[str] = field(default_factory=list)
+    urls: List[str] = field(default_factory=list)
+
+
+@dataclass
+class EmbeddingConfig:
+    codebase: CodebaseEmbeddingConfig = field(default_factory=CodebaseEmbeddingConfig)
+    issues: IssuesEmbeddingConfig = field(default_factory=IssuesEmbeddingConfig)
+    documents: DocumentsEmbeddingConfig = field(default_factory=DocumentsEmbeddingConfig)
 
 
 @dataclass
@@ -39,6 +71,7 @@ class GitConfig:
 class Config:
     """Main configuration container"""
     project: str
+    embedding: EmbeddingConfig
     jira: JiraConfig
     ai: AIConfig
     commands: CommandsConfig
@@ -69,11 +102,27 @@ class Config:
 
         jira_conf = merged.get("jira", {})
         ai_conf = merged.get("ai", {})
-        commands_conf = merged.get("gen", {})  # replaced commands with gen
+        embedding_conf = merged.get("embedding", {})
+        gen_conf = merged.get("gen", {})
         git_conf = merged.get("git", {})
 
         return cls(
             project=merged["project"],
+            embedding=EmbeddingConfig(
+                codebase=CodebaseEmbeddingConfig(
+                    path=embedding_conf.get("codebase", {}).get("path", "./"),
+                    include_patterns=embedding_conf.get("codebase", {}).get("include_patterns", ["src/**/*.java", "src/**/*.py"]),
+                    exclude_patterns=embedding_conf.get("codebase", {}).get("exclude_patterns", ["node_modules/**", "build/**"]),
+                ),
+                issues=IssuesEmbeddingConfig(
+                    include_statuses=embedding_conf.get("issues", {}).get("include_statuses", ["To Do", "In Progress", "Done"]),
+                    exclude_statuses=embedding_conf.get("issues", {}).get("exclude_statuses", ["Deleted", "Archived"]),
+                ),
+                documents=DocumentsEmbeddingConfig(
+                    paths=embedding_conf.get("documents", {}).get("paths", []),
+                    urls=embedding_conf.get("documents", {}).get("urls", []),
+                ),
+            ),
             jira=JiraConfig(
                 url=jira_conf.get("url", ""),
                 jira_project_key=jira_conf.get("jira_project_key", ""),
@@ -87,8 +136,8 @@ class Config:
                 openai_api_key=ai_conf.get("openai_api_key", "")
             ),
             commands=CommandsConfig(
-                build=commands_conf.get("build", "./gradlew build"),
-                test=commands_conf.get("test", "./gradlew test")
+                build=gen_conf.get("build", "./gradlew build"),
+                test=gen_conf.get("test", "./gradlew test")
             ),
             git=GitConfig(
                 default_branch_prefix=git_conf.get("default_branch_prefix", "feature/"),

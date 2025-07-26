@@ -9,7 +9,7 @@
 # =====================================================================
 # Project Configuration
 # =====================================================================
-project: "my-project"  # Unique identifier for this project (must match workspace name)
+project: "bts"  # Unique identifier for this project (must match workspace name)
 
 # =====================================================================
 # Embedding Configuration

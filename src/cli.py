@@ -14,28 +14,81 @@ app = typer.Typer(
 )
 console = Console()
 
-from .config import Config
-
-config = Config.load()
-project_id = config.project
-
 GLOBAL_EXAMPLE_CONFIG_CONTENT = """
 # ~/.dacrew/config.yml
 # Global configuration for DaCrew.
 # Copy this file to ~/.dacrew/config.yml and update it with your values.
-#
+
+# =====================================================================
+# Embedding Configuration
+# =====================================================================
+embedding:
+  # ---------------------------------------------------------
+  # Codebase Embedding
+  # ---------------------------------------------------------
+  codebase:
+    path: "./"  # Path to the project source root
+    include_patterns:
+      - "src/**/*.java"
+      - "src/**/*.py"
+    exclude_patterns:
+      - "node_modules/**"
+      - "build/**"
+
+  # ---------------------------------------------------------
+  # Jira Issues Embedding
+  # ---------------------------------------------------------
+  issues:
+    include_statuses: ["To Do", "In Progress", "Done"]
+    exclude_statuses: ["Deleted", "Archived"]
+
+  # ---------------------------------------------------------
+  # Documents & Web Embedding
+  # ---------------------------------------------------------
+  documents:
+    paths:
+      - "docs/architecture/"
+      - "docs/design-specs/spec.pdf"
+    urls:
+      - "https://mycompanywiki.com/project-guidelines"
+      - "https://developer.mozilla.org/en-US/docs/Web/HTTP"
+
+# =====================================================================
+# Generation (Build & Test Commands)
+# =====================================================================
+gen:
+  # Build command relative to the workspace/current directory
+  build: "./gradlew build"
+
+  # Test command relative to the workspace/current directory
+  test: "./gradlew test"
+
+# =====================================================================
+# Git Settings
+# =====================================================================
+git:
+  # Default branch prefix for branches created by dacrew
+  default_branch_prefix: "dacrew/"
+
+  # Commit message template
+  # Available placeholders: {ISSUE_ID}, {ISSUE_TITLE}
+  commit_template: "Implementing {ISSUE_ID}: {ISSUE_TITLE}"
+
 # =====================================================================
 # Jira Configuration
 # =====================================================================
 jira:
-  # URL to your Jira instance (e.g., https://yourcompany.atlassian.net)
-  url: "https://example.atlassian.net"
-
-  # Jira username (often your email address)
-  username: "your.email@example.com"
-
   # Jira API token (generate this from Jira account settings)
   api_token: "your-api-token"
+
+  # URL to your Jira instance (e.g., https://yourcompany.atlassian.net)
+  url: "https://custom-jira-instance.atlassian.net"
+
+  # Jira project key (e.g., ABC)
+  jira_project_key: "ABC"
+
+  # Default user ID (often the username or email)
+  user_id: "john.doe"
 
 # =====================================================================
 # AI and Embeddings
@@ -53,14 +106,10 @@ ai:
   # Embedding model for code and issues (HuggingFace or OpenAI)
   embeddings_model: "sentence-transformers/all-MiniLM-L6-v2"
 
-  # Directory for Chroma persistence (vector database)
-  chroma_persist_directory: "~/.dacrew/chroma"
-
 # =====================================================================
 # Additional defaults or secrets can be added here
 # =====================================================================
 """
-
 
 PROJECT_EXAMPLE_CONFIG_CONTENT = """
 # .dacrew-example.yml
@@ -68,21 +117,51 @@ PROJECT_EXAMPLE_CONFIG_CONTENT = """
 # Copy this file to .dacrew.yml in your project root and update it with your values.
 #
 # Values here override or extend those in ~/.dacrew/config.yml for this project.
+# DO NOT PLACE API KEYS IN THIS FILE
 
 # =====================================================================
 # Project Configuration
 # =====================================================================
-project:
-  # Unique identifier for this project (must match workspace name)
-  key: "my-project"
-
-  # Jira project key (e.g., ABC)
-  jira_project_key: "ABC"
+project: "my-project"  # Unique identifier for this project (must match workspace name)
 
 # =====================================================================
-# Build & Test Commands
+# Embedding Configuration
 # =====================================================================
-commands:
+embedding:
+  # ---------------------------------------------------------
+  # Codebase Embedding
+  # ---------------------------------------------------------
+  codebase:
+    path: "./"  # Path to the project source root
+    include_patterns:
+      - "src/**/*.java"
+      - "src/**/*.py"
+    exclude_patterns:
+      - "node_modules/**"
+      - "build/**"
+
+  # ---------------------------------------------------------
+  # Jira Issues Embedding
+  # ---------------------------------------------------------
+  issues:
+    include_statuses: ["To Do", "In Progress", "Done"]
+    exclude_statuses: ["Deleted", "Archived"]
+
+  # ---------------------------------------------------------
+  # Documents & Web Embedding
+  # ---------------------------------------------------------
+  documents:
+    paths:
+      - "docs/architecture/"
+      - "docs/design-specs/spec.pdf"
+    urls:
+      - "https://mycompanywiki.com/project-guidelines"
+      - "https://developer.mozilla.org/en-US/docs/Web/HTTP"
+
+# =====================================================================
+# Generation (Build & Test Commands)
+# =====================================================================
+gen:
   # Build command relative to the workspace/current directory
   build: "./gradlew build"
 
@@ -93,36 +172,41 @@ commands:
 # Git Settings
 # =====================================================================
 git:
-  # Default branch prefix for feature branches
-  default_branch_prefix: "feature/"
+  # Default branch prefix for branches created by dacrew
+  default_branch_prefix: "dacrew/"
 
   # Commit message template
   # Available placeholders: {ISSUE_ID}, {ISSUE_TITLE}
   commit_template: "Implementing {ISSUE_ID}: {ISSUE_TITLE}"
 
 # =====================================================================
-# Jira Configuration (Optional Overrides)
+# Jira Configuration
 # =====================================================================
 jira:
-  # Override the global Jira URL if needed (optional)
-  # url: "https://custom-jira-instance.atlassian.net"
+  # URL to your Jira instance (e.g., https://yourcompany.atlassian.net)
+  url: "https://custom-jira-instance.atlassian.net"
+
+  # Jira project key (e.g., ABC)
+  jira_project_key: "ABC"
+
+  # Default user ID (often the username or email)
+  user_id: "john.doe"
 
 # =====================================================================
-# AI Configuration (Optional Overrides)
+# AI and Embeddings
 # =====================================================================
 ai:
-  # Project-specific AI settings (if needed)
-  # model: "gpt-4"
-  # temperature: 0.5
+  # Model for code generation and other AI tasks
+  model: "gpt-4"
 
-# =====================================================================
-# Documentation and Knowledge Base
-# =====================================================================
-docs:
-  # Paths to domain documentation or knowledge files to embed
-  # - "docs/architecture.md"
-  # - "docs/design-specs/"
+  # Temperature controls randomness (0.0 = deterministic)
+  temperature: 0.7
+
+  # Embedding model for code and issues (HuggingFace or OpenAI)
+  embeddings_model: "sentence-transformers/all-MiniLM-L6-v2"
 """
+
+
 
 
 # ============================================================================
@@ -371,7 +455,7 @@ def index_embeddings(
         force: bool = typer.Option(False, "--force", "-f", help="Force re-indexing"),
 ):
     """Create embeddings for specified sources."""
-    manager = EmbeddingManager(project_id)
+    manager = EmbeddingManager(_get_config().project)
     sources = _get_sources(codebase, issues, documents)
     console.print(f"Indexing sources: {', '.join(sources)}", style="cyan")
     manager.index_sources(sources, force)
@@ -384,7 +468,7 @@ def clean_embeddings(
         force: bool = typer.Option(False, "--force", "-f", help="Force re-indexing"),
 ):
     """🧹 Clean up embeddings."""
-    manager = EmbeddingManager(project_id)
+    manager = EmbeddingManager(_get_config().project)
     if not force:
         confirm = typer.confirm("This action is irreversible. Continue?")
         if not confirm:
@@ -399,7 +483,7 @@ def clean_embeddings(
 @embeddings_app.command("stats")
 def embeddings_stats():
     """📊 Show embedding statistics."""
-    manager = EmbeddingManager(project_id)
+    manager = EmbeddingManager(_get_config().project)
     stats = manager.get_stats()
     console.print(f"Embedding stats: {stats}", style="cyan")
 
@@ -575,6 +659,14 @@ def _get_sources(codebase, issues, documents):
             sources.append("docs")
     return sources
 
+def _get_config():
+    from .config import Config
+    try:
+        return Config.load()
+    except FileNotFoundError:
+        console.print("❌ No configuration found.", style="red")
+        console.print("💡 Run 'dacrew init' to create initial config files.", style="yellow")
+        raise typer.Exit(1)
 
 # ============================================================================
 # MAIN

@@ -9,18 +9,18 @@ from pathlib import Path
 class JiraConfig:
     """Jira connection configuration"""
     url: str
-    username: str
-    api_token: str
+    jira_project_key: str
+    user_id: str
+    api_token: str = ""  # Still only in global config for security
 
 
 @dataclass
 class AIConfig:
     """AI/LLM configuration"""
-    embeddings_model: str
-    chroma_persist_directory: str
-    openai_api_key: str = ""
-    model: str = "gpt-3.5-turbo"
+    model: str = "gpt-4"
     temperature: float = 0.7
+    embeddings_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    openai_api_key: str = ""  # From global config only
 
 
 @dataclass
@@ -69,22 +69,22 @@ class Config:
 
         jira_conf = merged.get("jira", {})
         ai_conf = merged.get("ai", {})
-        commands_conf = merged.get("commands", {})
+        commands_conf = merged.get("gen", {})  # replaced commands with gen
         git_conf = merged.get("git", {})
 
         return cls(
             project=merged["project"],
             jira=JiraConfig(
                 url=jira_conf.get("url", ""),
-                username=jira_conf.get("username", ""),
-                api_token=jira_conf.get("api_token", "")
+                jira_project_key=jira_conf.get("jira_project_key", ""),
+                user_id=jira_conf.get("user_id", ""),
+                api_token=jira_conf.get("api_token", "")  # global only
             ),
             ai=AIConfig(
+                model=ai_conf.get("model", "gpt-4"),
+                temperature=float(ai_conf.get("temperature", 0.7)),
                 embeddings_model=ai_conf.get("embeddings_model", "sentence-transformers/all-MiniLM-L6-v2"),
-                chroma_persist_directory=ai_conf.get("chroma_persist_directory", "~/.dacrew/chroma"),
-                openai_api_key=ai_conf.get("openai_api_key", ""),
-                model=ai_conf.get("model", "gpt-3.5-turbo"),
-                temperature=float(ai_conf.get("temperature", 0.7))
+                openai_api_key=ai_conf.get("openai_api_key", "")
             ),
             commands=CommandsConfig(
                 build=commands_conf.get("build", "./gradlew build"),
@@ -96,7 +96,6 @@ class Config:
             ),
             config_file=project_config_path if project_config_path.exists() else global_config_path
         )
-
 
     @staticmethod
     def _load_yaml(path: Path) -> dict:
@@ -121,7 +120,6 @@ class Config:
                 )
 
 
-@staticmethod
 def _merge_configs(global_config: dict, project_config: dict) -> dict:
     """
     Merge global and project configs.
@@ -132,13 +130,10 @@ def _merge_configs(global_config: dict, project_config: dict) -> dict:
     def deep_merge(base, override):
         for k, v in override.items():
             if v is None:
-                # Ignore None values in project config
                 continue
-
             if isinstance(v, dict) and isinstance(base.get(k), dict):
                 deep_merge(base[k], v)
             else:
-                # Do not allow secrets from project config to override
                 if (k == "openai_api_key" and "ai" in base) or (k == "api_token" and "jira" in base):
                     continue
                 base[k] = v

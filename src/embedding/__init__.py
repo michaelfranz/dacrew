@@ -1,14 +1,11 @@
 """Embedding Management Module - Repository-Embedding Coordination"""
 
-from .embedding_manager import EmbeddingManager, EmbeddingMetadata
+from .embedding_manager import EmbeddingManager
 from .exceptions import EmbeddingError, EmbeddingNotFoundError, EmbeddingIndexError
 
 __all__ = [
     # Main coordination manager
     'EmbeddingManager',
-
-    # Utility classes
-    'EmbeddingMetadata',
 
     # Exceptions
     'EmbeddingError',

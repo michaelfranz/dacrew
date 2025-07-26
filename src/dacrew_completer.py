@@ -5,25 +5,27 @@ from typing import Iterable
 
 COMMANDS = {
     "init": {"subcommands": [], "options": []},
-    "codebase": {
-        "subcommands": [
-            "init", "add", "list", "scan", "index",
-            "search", "stats", "current",
-            "remove", "clean-embeddings", "purge"
-        ],
-        "options": []
-    },
     "issues": {
-        "subcommands": ["list", "show", "create", "embed", "test-connection"],
+        "subcommands": ["list", "show", "create", "test-connection"],
+        "options": {}
+    },
+    "embeddings": {
+        "subcommands": ["index", "query", "stats", "clean"],
         "options": {
-            "embed": [
+            "index": [
+                "--codebase",      # Index codebase
+                "--issues",        # Index issues
+                "--documents",     # Index docs
+                "--all"            # Index all sources
+            ],
+            "query": [
+                "--top-k",
+                "--source",        # Filter by source (codebase/issues/docs)
+            ],
+            "stats": [],
+            "clean": [
                 "--force",
-                "--limit",
-                "--project",
-                "--status",
-                "--assignee",
-                "--incremental",
-                "--dry-run"
+                "--source",        # Clean specific source
             ]
         }
     },
@@ -75,15 +77,25 @@ class DaCrewCompleter(Completer):
             cmd_info = COMMANDS.get(first_word)
 
             if cmd_info:
-                # If the second word matches a subcommand that has options, show options
-                if second_word in cmd_info.get("subcommands", []) and second_word in cmd_info.get("options", {}):
-                    for opt in cmd_info["options"][second_word]:
+                options = cmd_info.get("options")
+                subcommands = cmd_info.get("subcommands", [])
+
+                # Case: subcommand with its own options
+                if isinstance(options, dict) and second_word in subcommands and second_word in options:
+                    for opt in options[second_word]:
                         yield Completion(opt, start_position=0)
+
+                # Case: subcommand completion
                 else:
-                    # Otherwise, complete subcommands
-                    for sub in cmd_info.get("subcommands", []):
+                    for sub in subcommands:
                         if sub.startswith(second_word):
                             yield Completion(sub, start_position=-len(second_word))
+
+                # Case: top-level options (list)
+                if isinstance(options, list):
+                    for opt in options:
+                        if opt.startswith(second_word):
+                            yield Completion(opt, start_position=-len(second_word))
 
         elif len(words) >= 3:
             first_word = words[0]

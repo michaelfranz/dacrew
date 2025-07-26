@@ -1,12 +1,10 @@
 """CLI interface for DaCrew - AI-powered Development Crew"""
-
+import shlex
 from pathlib import Path
-
 import typer
 from rich.console import Console
 
 # Import required managers
-from .codebase.codebase_manager import SimpleCodebaseManager
 from .dacrew_completer import DaCrewCompleter
 from .embedding.embedding_manager import EmbeddingManager
 
@@ -15,10 +13,6 @@ app = typer.Typer(
     help="🚀 DaCrew - AI-powered development crew, your team of software development assistants"
 )
 console = Console()
-
-# ============================================================================
-# Test Connection Command (Top-level)
-# ============================================================================
 
 GLOBAL_EXAMPLE_CONFIG_CONTENT = """
 # ~/.dacrew/config.yml
@@ -61,6 +55,7 @@ ai:
 # Additional defaults or secrets can be added here
 # =====================================================================
 """
+
 
 PROJECT_EXAMPLE_CONFIG_CONTENT = """
 # .dacrew-example.yml
@@ -125,29 +120,26 @@ docs:
 """
 
 
+# ============================================================================
+# INIT COMMAND
+# ============================================================================
 @app.command("init")
 def init_project():
-    """
-    Initialize dacrew for the current project and global environment.
-    """
+    """Initialize DaCrew for the current project and global environment."""
     project_dir = Path.cwd()
     home_dir = Path.home() / ".dacrew"
 
-    # Create ~/.dacrew folder if needed
     home_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create global config-example.yml if it doesn't exist
     global_example_config = home_dir / "config-example.yml"
     if not global_example_config.exists():
         global_example_config.write_text(GLOBAL_EXAMPLE_CONFIG_CONTENT)
         console.print(f"✅ Created global config example: {global_example_config}", style="green")
         console.print("💡 Copy this to ~/.dacrew/config.yml and customize it.", style="yellow")
-
     elif not (home_dir / "config.yml").exists():
         console.print("⚠️ Global config ~/.dacrew/config.yml not found.", style="yellow")
         console.print(f"   Copy and edit: {global_example_config}", style="dim")
 
-    # Create .dacrew-example.yml for the current project
     project_example_config = project_dir / ".dacrew-example.yml"
     if not project_example_config.exists():
         project_example_config.write_text(PROJECT_EXAMPLE_CONFIG_CONTENT)
@@ -156,56 +148,43 @@ def init_project():
     else:
         console.print("⚠️ Project config example already exists (.dacrew-example.yml).", style="yellow")
 
-
+# ============================================================================
+# TEST CONNECTION
+# ============================================================================
 @app.command("test-connection")
 def test_jira_connection():
     """🔗 Test Jira connection"""
     try:
         from .config import Config
         from .jira_client import JiraClient
-
         console.print("🔗 Testing Jira connection...", style="cyan")
-
         config = Config.load()
 
-        # Validate configuration
         if not config.jira.url:
             console.print("❌ Jira URL not configured", style="red")
-            console.print("Please set jira.url in your config file", style="yellow")
             return
-
         if not config.jira.username:
             console.print("❌ Jira username not configured", style="red")
-            console.print("Please set jira.username in your config file", style="yellow")
             return
-
         if not config.jira.api_token:
             console.print("❌ Jira API token not configured", style="red")
-            console.print("Please set jira.api_token in your config file", style="yellow")
             return
 
-        # Test connection
         client = JiraClient(config)
-
         if client.test_connection():
             console.print("✅ Jira connection successful!", style="green")
             console.print(f"Connected to: {config.jira.url}", style="dim")
-            console.print(f"Username: {config.jira.username}", style="dim")
         else:
             console.print("❌ Jira connection failed!", style="red")
-            console.print("Please check your credentials and try again", style="yellow")
 
     except Exception as e:
         console.print(f"❌ Error testing connection: {str(e)}", style="red")
 
-
 # ============================================================================
-# Issues Command Group
+# ISSUES COMMAND GROUP
 # ============================================================================
-
 issues_app = typer.Typer(help="🎫 Manage Jira issues and tickets")
 app.add_typer(issues_app, name="issues")
-
 
 @issues_app.command("list")
 def list_issues(
@@ -335,7 +314,7 @@ def create_issue(
 
         # Use default project if not specified
         if not project:
-            project = config.project.default_project_key
+            project = config.project
 
         if not project:
             console.print("❌ No project specified and no default project configured", style="red")
@@ -368,1092 +347,91 @@ def create_issue(
     except Exception as e:
         console.print(f"❌ Error creating issue: {str(e)}", style="red")
 
-
-@issues_app.command("embed")
-def embed_issues(
-        force: bool = typer.Option(False, "--force", "-f", help="Force rebuild of issue embeddings"),
-        limit: int = typer.Option(1000, "--limit", "-l", help="Maximum number of issues to fetch"),
-):
-    """
-    Create or update JIRA issue embeddings for this project.
-    """
-    try:
-        from .config import Config
-        from .jira_client import JiraClient
-
-        console.print("📥 Fetching JIRA issues...", style="cyan")
-
-        # Initialize JIRA client
-        config = Config.load()
-        client = JiraClient(config)
-
-        # Fetch all issues (paginated, if needed)
-        issues = client.search_issues("order by updated DESC", max_results=limit)
-        if not issues:
-            console.print("❌ No issues found to embed", style="yellow")
-            return
-
-        console.print(f"📊 Retrieved {len(issues)} issues. Creating embeddings...", style="cyan")
-
-        manager = EmbeddingManager()
-        result = manager.create_issue_embeddings(issues, force_rebuild=force)
-
-        console.print(
-            f"✅ Indexed {result['total_issues']} issues into '{result['collection_name']}'",
-            style="green"
-        )
-        console.print(f"Last updated: {result['last_updated']}", style="dim")
-
-    except Exception as e:
-        console.print(f"❌ Error creating issue embeddings: {str(e)}", style="red")
-
-
 @issues_app.command("test-connection")
 def test_connection_issues():
     """🔗 Test Jira connection (issues context)"""
-    # Reuse the main test-connection logic
     test_jira_connection()
 
-
 # ============================================================================
-# Codebase Command Group
+# EMBEDDINGS COMMAND GROUP
 # ============================================================================
+embeddings_app = typer.Typer(help="🧠 Manage embeddings for code, issues, and docs")
+app.add_typer(embeddings_app, name="embeddings")
 
-codebase_app = typer.Typer(help="📁 Manage repository codebases")
-app.add_typer(codebase_app, name="codebase")
-
-
-@codebase_app.command("init")
-def init_workspace():
-    """🚀 Initialize workspace structure"""
-    try:
-        project_root = Path(__file__).parent.parent  # Go up from src/ to project root
-        workspace_dir = project_root / "workspace"
-        repos_dir = workspace_dir / "repos"
-        embeddings_dir = workspace_dir / "embeddings"
-        embeddings_dir_codebase_dir = embeddings_dir / "codebase"
-        embeddings_docs_dir = embeddings_dir / "docs"
-        embeddings_issues_dir = embeddings_dir / "issues"
-
-        console.print("🚀 Initializing workspace structure...", style="cyan")
-
-        # Create directories
-        workspace_dir.mkdir(exist_ok=True)
-        repos_dir.mkdir(exist_ok=True)
-        embeddings_dir.mkdir(exist_ok=True)
-        embeddings_dir_codebase_dir.mkdir(exist_ok=True)
-        embeddings_docs_dir.mkdir(exist_ok=True)
-        embeddings_issues_dir.mkdir(exist_ok=True)
-
-        # Create .gitkeep files to track empty directories
-        for dir_path in [repos_dir, embeddings_dir]:
-            gitkeep = dir_path / ".gitkeep"
-            if not gitkeep.exists():
-                gitkeep.write_text("# This file ensures the directory is tracked by git\n")
-
-        console.print("✅ Workspace structure initialized!", style="green")
-        console.print(f"📁 Workspace root: {workspace_dir}", style="dim")
-        console.print(f"📁 Repositories: {repos_dir}", style="dim")
-        console.print(f"📁 Embeddings: {embeddings_dir}", style="dim")
-
-        console.print("\n💡 Next steps:", style="bold yellow")
-        console.print("1. Clone repositories into workspace/repos/", style="white")
-        console.print("   cd workspace/repos && git clone <repo-url>", style="dim")
-        console.print("2. Scan repositories: dacrew codebase scan", style="white")
-        console.print("3. Index for AI search: dacrew codebase index --repo <name>", style="white")
-
-    except Exception as e:
-        console.print(f"❌ Error initializing workspace: {str(e)}", style="red")
-
-
-@codebase_app.command("add")
-def add_repository(
-        repo_url: str,
-        name: str = typer.Option(None, "--name", "-n",
-                                 help="Custom name for the repository (note: currently not implemented)"),
-        branch: str = typer.Option(None, "--branch", "-b", help="Specific branch to clone"),
-        shallow: bool = typer.Option(True, "--shallow/--full", help="Perform shallow clone (default: True)"),
-        auto_index: bool = typer.Option(True, "--index/--no-index",
-                                        help="Automatically create embeddings after adding (default: True)")
+@embeddings_app.command("index")
+def index_embeddings(
+        codebase: bool = typer.Option(False, "--codebase", help="Index codebase"),
+        issues: bool = typer.Option(False, "--issues", help="Index issues"),
+        documents: bool = typer.Option(False, "--documents", help="Index documents"),
+        all_: bool = typer.Option(False, "--all", help="Index all sources"),
+        force: bool = typer.Option(False, "--force", "-f", help="Force re-indexing"),
 ):
-    """➕ Add a new repository and optionally index it"""
-    try:
-        console.print(f"🚀 Adding repository: {repo_url}", style="cyan")
-
-        # Show warning if custom name was specified (not yet supported)
-        if name:
-            console.print("⚠️ Custom name parameter is not yet supported by the codebase manager", style="yellow")
-            console.print("   Repository will use the default name from the URL", style="dim")
-
-        # Initialize codebase manager
-        codebase_manager = SimpleCodebaseManager()
-
-        # Add the repository
-        console.print("📥 Cloning repository...", style="yellow")
-
-        def progress_callback(message):
-            console.print(f"   {message}", style="dim")
-
-        try:
-            # Call the method with the correct parameters
-            repo_path, detected_branch = codebase_manager.add_codebase(
-                repo_url=repo_url,
-                branch=branch,
-                shallow=shallow,
-                progress_callback=progress_callback
-            )
-
-            if not repo_path:
-                console.print("❌ Failed to add repository", style="red")
-                return
-
-            console.print(f"✅ Successfully added repository to: {repo_path}", style="green")
-            console.print(f"🌿 Branch: {detected_branch}", style="dim")
-
-            # Get repository info to show more details
-            repo_info = codebase_manager.get_current_repository_info()
-            if repo_info:
-                console.print(f"📝 Repository name: {repo_info['repo_name']}", style="dim")
-                console.print(f"🆔 Repository ID: {repo_info['repo_id']}", style="dim")
-                console.print(f"🎯 Set as current repository", style="green")
-
-        except Exception as e:
-            console.print(f"❌ Failed to clone repository: {str(e)}", style="red")
-            return
-
-        # Auto-index if requested
-        if auto_index:
-            console.print("\n🗂️ Creating embeddings for repository...", style="cyan")
-
-            try:
-                embedding_manager = EmbeddingManager()
-
-                def embedding_progress_callback(message):
-                    console.print(f"   {message}", style="dim")
-
-                metadata = embedding_manager.create_embedding_for_current_repo(
-                    progress_callback=embedding_progress_callback
-                )
-
-                console.print(f"✅ Embeddings created successfully!", style="green")
-                console.print(
-                    f"📊 Indexed {metadata.get('total_files', 0)} files into {metadata.get('total_chunks', 0)} chunks",
-                    style="dim")
-
-            except Exception as e:
-                console.print(f"⚠️ Repository added but indexing failed: {str(e)}", style="yellow")
-                console.print("💡 You can index later with: dacrew codebase index", style="dim")
-
-        # Show next steps
-        console.print("\n🎉 Repository setup complete!", style="bold green")
-        console.print("\n💡 What you can do next:", style="bold yellow")
-        if repo_info:
-            console.print("• Scan the repository: dacrew codebase scan --repo " + repo_info['repo_name'], style="white")
-        console.print("• Search the code: dacrew codebase search 'your query'", style="white")
-        console.print("• List all repos: dacrew codebase list", style="white")
-        console.print("• Show current repo: dacrew codebase current", style="white")
-
-    except ImportError as e:
-        console.print(f"❌ Missing required components: {str(e)}", style="red")
-        console.print("💡 Make sure all codebase and embedding modules are properly set up", style="yellow")
-    except Exception as e:
-        console.print(f"❌ Error adding repository: {str(e)}", style="red")
-
-
-@codebase_app.command("list")
-def list_repositories():
-    """📋 List repositories in workspace/repos"""
-    try:
-        # Get workspace/repos directory
-        project_root = Path(__file__).parent.parent  # Go up from src/ to project root
-        repos_dir = project_root / "workspace" / "repos"
-
-        if not repos_dir.exists():
-            console.print("📁 workspace/repos directory doesn't exist", style="yellow")
-            console.print("💡 It will be created when you run other commands", style="dim")
-            return
-
-        repos = [d for d in repos_dir.iterdir() if d.is_dir() and not d.name.startswith('.')]
-
-        if not repos:
-            console.print("📭 No repositories found in workspace/repos", style="yellow")
-            console.print("💡 Clone repositories into this directory:", style="dim")
-            console.print(f"   cd {repos_dir}", style="dim")
-            console.print("   git clone <repo-url>", style="dim")
-            return
-
-        console.print(f"📋 Found {len(repos)} repositories in workspace/repos:", style="cyan")
-
-        from rich.table import Table
-        repo_table = Table()
-        repo_table.add_column("Repository", style="cyan", no_wrap=True)
-        repo_table.add_column("Type", style="green")
-        repo_table.add_column("Size", style="magenta", justify="right")
-        repo_table.add_column("Last Modified", style="yellow")
-
-        for repo_dir in sorted(repos, key=lambda x: x.name.lower()):
-            # Detect repo type
-            repo_type = "📁 Directory"
-            if (repo_dir / ".git").exists():
-                repo_type = "🔄 Git Repository"
-            elif (repo_dir / "package.json").exists():
-                repo_type = "📦 Node.js Project"
-            elif (repo_dir / "requirements.txt").exists() or (repo_dir / "pyproject.toml").exists():
-                repo_type = "🐍 Python Project"
-            elif (repo_dir / "pom.xml").exists():
-                repo_type = "☕ Maven Project"
-            elif (repo_dir / "Cargo.toml").exists():
-                repo_type = "🦀 Rust Project"
-            elif (repo_dir / "go.mod").exists():
-                repo_type = "🐹 Go Project"
-
-            # Calculate size
-            try:
-                size_bytes = sum(f.stat().st_size for f in repo_dir.rglob('*') if f.is_file())
-                if size_bytes < 1024 * 1024:  # < 1MB
-                    size_str = f"{size_bytes // 1024}KB"
-                elif size_bytes < 1024 * 1024 * 1024:  # < 1GB
-                    size_str = f"{size_bytes // (1024 * 1024)}MB"
-                else:
-                    size_str = f"{size_bytes // (1024 * 1024 * 1024):.1f}GB"
-            except:
-                size_str = "Unknown"
-
-            # Get last modified
-            try:
-                last_modified_timestamp = repo_dir.stat().st_mtime
-                from datetime import datetime
-                last_modified_date = datetime.fromtimestamp(last_modified_timestamp).strftime('%Y-%m-%d %H:%M')
-            except:
-                last_modified_date = "Unknown"
-
-            repo_table.add_row(repo_dir.name, repo_type, size_str, last_modified_date)
-
-        console.print(repo_table)
-        console.print(f"\n💡 Use: dacrew codebase scan --repo <name> to analyze a specific repository", style="dim")
-
-    except Exception as e:
-        console.print(f"❌ Error listing repositories: {str(e)}", style="red")
-
-
-@codebase_app.command("scan")
-def scan_codebase(
-        path: str = typer.Option(None, "--path", "-p", help="Path to scan (default: workspace/repos)"),
-        repo: str = typer.Option(None, "--repo", "-r", help="Specific repository to scan"),
-        exclude: str = typer.Option(".git,node_modules,__pycache__,.pytest_cache,.venv,venv", "--exclude", "-e",
-                                    help="Comma-separated list of directories to exclude"),
-        extensions: str = typer.Option("py,js,ts,java,cpp,c,h,rb,go,rs", "--extensions", "-x",
-                                       help="Comma-separated list of file extensions to include"),
-        output: str = typer.Option(None, "--output", "-o", help="Output file path (optional)")
-):
-    """🔍 Scan and analyze codebase structure in workspace/repos"""
-    from pathlib import Path
-    from rich.table import Table
-    from rich.tree import Tree
-
-    try:
-        # Determine scan path
-        if path:
-            scan_path = Path(path).resolve()
-        else:
-            # Default to workspace/repos from project root
-            project_root = Path(__file__).parent.parent  # Go up from src/ to project root
-            workspace_dir = project_root / "workspace"
-            repos_dir = workspace_dir / "repos"
-
-            # Create workspace structure if it doesn't exist
-            if not workspace_dir.exists():
-                console.print("📁 Creating workspace directory...", style="cyan")
-                workspace_dir.mkdir(exist_ok=True)
-
-            if not repos_dir.exists():
-                console.print("📁 Creating repos directory...", style="cyan")
-                repos_dir.mkdir(exist_ok=True)
-
-            # Also create embeddings directory
-            embeddings_dir = workspace_dir / "embeddings"
-            if not embeddings_dir.exists():
-                console.print("📁 Creating embeddings directory...", style="cyan")
-                embeddings_dir.mkdir(exist_ok=True)
-
-            scan_path = repos_dir
-
-        if not scan_path.exists():
-            console.print(f"❌ Path not found: {scan_path}", style="red")
-            console.print("💡 Tip: Clone some repositories to workspace/repos first", style="yellow")
-            return
-
-        # If specific repo requested, scan that repo
-        if repo:
-            repo_path = scan_path / repo
-            if not repo_path.exists():
-                console.print(f"❌ Repository '{repo}' not found in {scan_path}", style="red")
-
-                # List available repos
-                available_repos = [d.name for d in scan_path.iterdir() if d.is_dir() and not d.name.startswith('.')]
-                if available_repos:
-                    console.print(f"📂 Available repositories: {', '.join(available_repos)}", style="cyan")
-                return
-            scan_path = repo_path
-
-        excluded_dirs = set(exclude.split(','))
-        valid_extensions = set(ext.strip('.') for ext in extensions.split(','))
-
-        console.print(f"🔍 Scanning codebase at: {scan_path}", style="cyan")
-        console.print(f"📂 Excluding directories: {', '.join(excluded_dirs)}", style="dim")
-        console.print(f"📄 Including extensions: {', '.join(valid_extensions)}", style="dim")
-
-        # If scanning repos directory, show repository overview first
-        if scan_path.name == "repos" and not repo:
-            console.print("\n📋 Repository Overview:", style="bold cyan")
-            repos = [d for d in scan_path.iterdir() if d.is_dir() and not d.name.startswith('.')]
-
-            if not repos:
-                console.print("📭 No repositories found in workspace/repos", style="yellow")
-                console.print("💡 Try: git clone <repo-url> into workspace/repos/", style="dim")
-                return
-
-            repo_table = Table()
-            repo_table.add_column("Repository", style="cyan")
-            repo_table.add_column("Type", style="green")
-            repo_table.add_column("Last Modified", style="magenta")
-
-            for repo_dir in sorted(repos):
-                # Detect repo type
-                repo_type = "Unknown"
-                if (repo_dir / ".git").exists():
-                    repo_type = "Git Repository"
-                elif (repo_dir / "package.json").exists():
-                    repo_type = "Node.js Project"
-                elif (repo_dir / "requirements.txt").exists() or (repo_dir / "pyproject.toml").exists():
-                    repo_type = "Python Project"
-                elif (repo_dir / "pom.xml").exists():
-                    repo_type = "Maven Project"
-                elif (repo_dir / "Cargo.toml").exists():
-                    repo_type = "Rust Project"
-
-                # Get last modified
-                try:
-                    last_modified_timestamp = repo_dir.stat().st_mtime
-                    from datetime import datetime
-                    last_modified_date = datetime.fromtimestamp(last_modified_timestamp).strftime('%Y-%m-%d')
-                except:
-                    last_modified_date = "Unknown"
-
-                repo_table.add_row(repo_dir.name, repo_type, last_modified_date)
-
-            console.print(repo_table)
-            console.print(f"\n💡 Use --repo <name> to scan a specific repository", style="dim")
-            console.print(f"💡 Example: dacrew codebase scan --repo {repos[0].name}", style="dim")
-            return
-
-        # Statistics
-        stats = {
-            'total_files': 0,
-            'code_files': 0,
-            'total_lines': 0,
-            'code_lines': 0,
-            'directories': 0,
-            'extensions': {},
-            'repo_name': scan_path.name if repo else 'Multiple Repositories'
-        }
-
-        # File tree for display
-        tree = Tree(f"📁 {scan_path.name}")
-
-        def scan_directory(current_path: Path, current_tree: Tree = None, max_depth: int = 3, current_depth: int = 0):
-            if current_depth > max_depth:
-                return
-
-            try:
-                items = list(current_path.iterdir())
-                items.sort(key=lambda x: (not x.is_dir(), x.name.lower()))
-
-                for item in items:
-                    if item.name.startswith('.') and item.name not in ['.env', '.env.example']:
-                        continue
-
-                    if item.is_dir():
-                        if item.name in excluded_dirs:
-                            continue
-                        stats['directories'] += 1
-
-                        if current_tree and current_depth < max_depth:
-                            dir_node = current_tree.add(f"📁 {item.name}")
-                            scan_directory(item, dir_node, max_depth, current_depth + 1)
-                        else:
-                            scan_directory(item, None, max_depth, current_depth + 1)
-
-                    else:
-                        stats['total_files'] += 1
-                        file_ext = item.suffix.lstrip('.')
-
-                        if file_ext in valid_extensions:
-                            stats['code_files'] += 1
-                            stats['extensions'][file_ext] = stats['extensions'].get(file_ext, 0) + 1
-
-                            # Count lines
-                            try:
-                                with open(item, 'r', encoding='utf-8', errors='ignore') as f:
-                                    lines = f.readlines()
-                                    total_lines = len(lines)
-                                    code_lines = len(
-                                        [line for line in lines if line.strip() and not line.strip().startswith('#')])
-                                    stats['total_lines'] += total_lines
-                                    stats['code_lines'] += code_lines
-                            except Exception:
-                                pass
-
-                            if current_tree and current_depth < max_depth:
-                                file_icon = "🐍" if file_ext == "py" else "📄"
-                                current_tree.add(f"{file_icon} {item.name}")
-
-            except PermissionError:
-                pass
-
-        scan_directory(scan_path, tree)
-
-        # Display tree (limited depth)
-        console.print(tree)
-        console.print()
-
-        # Display statistics
-        stats_table = Table(title=f"Codebase Statistics - {stats['repo_name']}")
-        stats_table.add_column("Metric", style="cyan")
-        stats_table.add_column("Count", style="white", justify="right")
-
-        stats_table.add_row("Total Files", str(stats['total_files']))
-        stats_table.add_row("Code Files", str(stats['code_files']))
-        stats_table.add_row("Directories", str(stats['directories']))
-        stats_table.add_row("Total Lines", f"{stats['total_lines']:,}")
-        stats_table.add_row("Code Lines", f"{stats['code_lines']:,}")
-
-        console.print(stats_table)
-
-        # Extensions breakdown
-        if stats['extensions']:
-            ext_table = Table(title="File Extensions")
-            ext_table.add_column("Extension", style="cyan")
-            ext_table.add_column("Files", style="white", justify="right")
-            ext_table.add_column("Percentage", style="green", justify="right")
-
-            total_code_files = stats['code_files']
-            for ext, count in sorted(stats['extensions'].items(), key=lambda x: x[1], reverse=True):
-                percentage = (count / total_code_files) * 100 if total_code_files > 0 else 0
-                ext_table.add_row(f".{ext}", str(count), f"{percentage:.1f}%")
-
-            console.print(ext_table)
-
-        # Save to file if requested
-        if output:
-            output_path = Path(output)
-            scan_report = {
-                'path': str(scan_path),
-                'repository': stats['repo_name'],
-                'timestamp': str(Path().resolve()),
-                'statistics': stats,
-                'scan_parameters': {
-                    'excluded_directories': excluded_dirs,
-                    'included_extensions': valid_extensions
-                }
-            }
-
-            import json
-            with open(output_path, 'w') as f:
-                json.dump(scan_report, f, indent=2, default=str)
-            console.print(f"📄 Report saved to: {output_path}", style="green")
-
-    except Exception as e:
-        console.print(f"❌ Error scanning codebase: {str(e)}", style="red")
-
-
-@codebase_app.command("index")
-def index_codebase(
-        path: str = typer.Option(".", "--path", "-p", help="Path to index"),
-        force: bool = typer.Option(False, "--force", "-f", help="Force reindex even if already indexed")
-):
-    """🗂️ Index codebase for AI analysis"""
-    try:
-        from .config import Config
-        from pathlib import Path
-
-        config = Config.load()
-        index_path = Path(path).resolve()
-
-        if not index_path.exists():
-            console.print(f"❌ Path not found: {path}", style="red")
-            return
-
-        console.print(f"🗂️ Indexing codebase at: {index_path}", style="cyan")
-
-        # Check if vector database exists
-        vector_db_path = Path(config.ai.chroma_persist_directory)
-        if vector_db_path.exists() and not force:
-            console.print("📊 Existing index found", style="yellow")
-            console.print("Use --force to reindex", style="dim")
-            return
-
-        # Import vector database components
-        try:
-            from .vector_db.manager import VectorDBManager
-            from .embedding.generator import EmbeddingGenerator
-        except ImportError:
-            console.print("❌ Vector database components not available", style="red")
-            console.print("This feature requires additional dependencies", style="yellow")
-            return
-
-        console.print("🚀 Starting indexing process...", style="cyan")
-
-        # Initialize components
-        embedding_generator = EmbeddingGenerator(config.ai.embeddings_model)
-        vector_manager = VectorDBManager(config.ai.chroma_persist_directory)
-
-        # Scan for code files
-        code_files = []
-        for file_path in index_path.rglob("*.py"):  # Focus on Python files for now
-            if not any(excluded in str(file_path) for excluded in ['.git', '__pycache__', '.venv', 'venv']):
-                code_files.append(file_path)
-
-        console.print(f"📄 Found {len(code_files)} Python files to index", style="green")
-
-        # Process files with progress
-        from rich.progress import Progress, SpinnerColumn, TextColumn
-
-        with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                console=console,
-        ) as progress:
-            task = progress.add_task("Indexing files...", total=len(code_files))
-
-            indexed_count = 0
-            for file_path in code_files:
-                try:
-                    # Read file content
-                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                        content = f.read()
-
-                    if content.strip():  # Only index non-empty files
-                        # Generate embedding
-                        embedding = embedding_generator.generate_embedding(content)
-
-                        # Store in vector database
-                        vector_manager.add_document(
-                            document=content,
-                            metadata={
-                                'file_path': str(file_path.relative_to(index_path)),
-                                'file_name': file_path.name,
-                                'file_type': 'python',
-                                'indexed_at': str(Path().resolve())
-                            },
-                            embedding=embedding
-                        )
-                        indexed_count += 1
-
-                    progress.update(task, advance=1)
-
-                except Exception as e:
-                    console.print(f"⚠️ Skipped {file_path.name}: {str(e)}", style="yellow")
-                    progress.update(task, advance=1)
-
-        console.print(f"✅ Successfully indexed {indexed_count} files", style="green")
-        console.print(f"📊 Vector database saved to: {config.ai.chroma_persist_directory}", style="dim")
-
-    except Exception as e:
-        console.print(f"❌ Error indexing codebase: {str(e)}", style="red")
-
-
-@codebase_app.command("search")
-def search_codebase(
-        query: str,
-        limit: int = typer.Option(5, "--limit", "-l", help="Maximum number of results"),
-        threshold: float = typer.Option(0.7, "--threshold", "-t", help="Similarity threshold (0.0-1.0)")
-):
-    """🔍 Search indexed codebase using AI similarity"""
-    try:
-        from .config import Config
-        from pathlib import Path
-
-        config = Config.load()
-
-        # Check if index exists
-        vector_db_path = Path(config.ai.chroma_persist_directory)
-        if not vector_db_path.exists():
-            console.print("❌ No codebase index found", style="red")
-            console.print("Run 'dacrew codebase index' first", style="yellow")
-            return
-
-        # Import vector database components
-        try:
-            from .vector_db.manager import VectorDBManager
-            from .embedding.generator import EmbeddingGenerator
-        except ImportError:
-            console.print("❌ Vector database components not available", style="red")
-            return
-
-        console.print(f"🔍 Searching for: '{query}'", style="cyan")
-
-        # Initialize components
-        embedding_generator = EmbeddingGenerator(config.ai.embeddings_model)
-        vector_manager = VectorDBManager(config.ai.chroma_persist_directory)
-
-        # Generate query embedding
-        query_embedding = embedding_generator.generate_embedding(query)
-
-        # Search vector database
-        results = vector_manager.search_similar(
-            query_embedding=query_embedding,
-            limit=limit,
-            threshold=threshold
-        )
-
-        if not results:
-            console.print("No similar code found", style="yellow")
-            return
-
-        # Display results
-        from rich.panel import Panel
-        from rich.syntax import Syntax
-
-        for i, result in enumerate(results, 1):
-            metadata = result.get('metadata', {})
-            content = result.get('document', '')
-            similarity = result.get('similarity', 0.0)
-
-            file_path = metadata.get('file_path', 'unknown')
-            file_name = metadata.get('file_name', 'unknown')
-
-            # Create syntax highlighted code preview
-            code_preview = content[:500] + "..." if len(content) > 500 else content
-            syntax = Syntax(code_preview, "python", theme="monokai", line_numbers=True)
-
-            panel_title = f"Result {i}: {file_name} (similarity: {similarity:.2f})"
-            panel = Panel(
-                syntax,
-                title=panel_title,
-                subtitle=f"📁 {file_path}",
-                border_style="blue"
-            )
-
-            console.print(panel)
-            console.print()
-
-    except Exception as e:
-        console.print(f"❌ Error searching codebase: {str(e)}", style="red")
-
-
-@codebase_app.command("stats")
-def show_codebase_stats():
-    """📊 Show codebase indexing statistics"""
-    try:
-        from .config import Config
-        from pathlib import Path
-
-        config = Config.load()
-        vector_db_path = Path(config.ai.chroma_persist_directory)
-
-        if not vector_db_path.exists():
-            console.print("❌ No codebase index found", style="red")
-            console.print("Run 'dacrew codebase index' first", style="yellow")
-            return
-
-        # Import vector database components
-        try:
-            from .vector_db.manager import VectorDBManager
-        except ImportError:
-            console.print("❌ Vector database components not available", style="red")
-            return
-
-        vector_manager = VectorDBManager(config.ai.chroma_persist_directory)
-        stats = vector_manager.get_stats()
-
-        # Display statistics
-        from rich.table import Table
-
-        stats_table = Table(title="Codebase Index Statistics")
-        stats_table.add_column("Metric", style="cyan")
-        stats_table.add_column("Value", style="white", justify="right")
-
-        stats_table.add_row("Total Documents", str(stats.get('document_count', 0)))
-        stats_table.add_row("Database Path", str(vector_db_path))
-        stats_table.add_row("Embedding Model", config.ai.embeddings_model)
-
-        console.print(stats_table)
-
-        # Show recent files if available
-        recent_files = stats.get('recent_files', [])
-        if recent_files:
-            files_table = Table(title="Recently Indexed Files")
-            files_table.add_column("File", style="cyan")
-            files_table.add_column("Type", style="green")
-
-            for file_info in recent_files[:10]:  # Show last 10
-                files_table.add_row(file_info.get('name', 'unknown'), file_info.get('type', 'unknown'))
-
-            console.print(files_table)
-
-    except Exception as e:
-        console.print(f"❌ Error getting stats: {str(e)}", style="red")
-
-
-@codebase_app.command("current")
-def show_current_repository():
-    """🎯 Show current active repository"""
-    try:
-        from .codebase.codebase_manager import SimpleCodebaseManager
-        from .embedding.embedding_manager import EmbeddingManager
-
-        codebase_manager = SimpleCodebaseManager()
-        embedding_manager = EmbeddingManager()
-
-        # Get current repository
-        repo_info = codebase_manager.get_current_repository_info()
-
-        if not repo_info:
-            console.print("📭 No current repository set", style="yellow")
-            console.print("💡 Use 'dacrew codebase add <repo-url>' to add a repository", style="dim")
-            console.print("💡 Or 'dacrew codebase list' to see available repositories", style="dim")
-            return
-
-        # Display current repository info
-        from rich.panel import Panel
-        from rich.table import Table
-
-        info_table = Table.grid(padding=1)
-        info_table.add_column(style="cyan", justify="right")
-        info_table.add_column(style="white")
-
-        info_table.add_row("Repository:", repo_info['repo_name'])
-        info_table.add_row("ID:", repo_info['repo_id'])
-        info_table.add_row("URL:", repo_info.get('repo_url', 'N/A'))
-        info_table.add_row("Branch:", repo_info.get('branch', 'N/A'))
-        info_table.add_row("Path:", repo_info['actual_path'])
-        info_table.add_row("Added:", repo_info.get('cloned_at', 'N/A'))
-
-        from pathlib import Path
-        repo_path = Path(repo_info['actual_path'])
-        if not repo_path.is_absolute():
-            repo_path = codebase_manager.workspace_root / repo_path
-        path_exists = repo_path.exists()
-
-        info_table.add_row("Exists:", "✅ Yes" if path_exists else "❌ No")
-
-        console.print(Panel(info_table, title="🎯 Current Repository", border_style="blue"))
-
-        # Show embedding status
-        embedding_status = embedding_manager.get_current_embedding_status()
-        if embedding_status.get('exists', False):
-            metadata = embedding_status.get('metadata', {})
-
-            embed_table = Table.grid(padding=1)
-            embed_table.add_column(style="green", justify="right")
-            embed_table.add_column(style="white")
-
-            embed_table.add_row("Status:", metadata.get('indexing_status', 'Unknown'))
-            embed_table.add_row("Files:", str(metadata.get('total_files', 0)))
-            embed_table.add_row("Chunks:", str(metadata.get('total_chunks', 0)))
-            embed_table.add_row("Last Updated:", metadata.get('last_updated', 'N/A')[:10])
-            embed_table.add_row("Model:", metadata.get('embedding_model', 'N/A'))
-
-            console.print(Panel(embed_table, title="🗂️ Embedding Status", border_style="green"))
-        else:
-            console.print(Panel("No embeddings found", title="🗂️ Embedding Status", border_style="yellow"))
-            console.print("💡 Create embeddings with: dacrew codebase index", style="dim")
-
-    except ImportError as e:
-        console.print(f"❌ Missing required components: {str(e)}", style="red")
-    except Exception as e:
-        console.print(f"❌ Error getting current repository: {str(e)}", style="red")
-
-
-@codebase_app.command("remove")
-def remove_repository(
-        repo_name: str,
-        force: bool = typer.Option(False, "--force", "-f", help="Force removal without confirmation"),
-        keep_embeddings: bool = typer.Option(False, "--keep-embeddings",
-                                             help="Keep embeddings when removing repository"),
-        delete_files: bool = typer.Option(False, "--delete-files",
-                                          help="Also delete the actual repository files from disk")
-):
-    """🗑️ Remove a repository from the workspace
-
-    This removes the repository from workspace tracking. By default, it also removes
-    associated embeddings but keeps the actual repository files on disk.
-
-    Options:
-    - Default: Remove workspace tracking + embeddings, keep files
-    - --keep-embeddings: Remove only workspace tracking
-    - --delete-files: Also delete the repository files from disk (DANGEROUS!)
-    """
-    try:
-        from .codebase.codebase_manager import SimpleCodebaseManager
-        from .embedding.embedding_manager import EmbeddingManager
-
-        codebase_manager = SimpleCodebaseManager()
-        embedding_manager = EmbeddingManager()
-
-        # Find repository by name or ID
-        repositories = codebase_manager.list_repositories()
-        repo_info = None
-
-        for repo in repositories:
-            if repo['repo_name'] == repo_name or repo['repo_id'] == repo_name:
-                repo_info = repo
-                break
-
-        if not repo_info:
-            console.print(f"❌ Repository '{repo_name}' not found", style="red")
-
-            # Show available repositories
-            if repositories:
-                console.print("\n📋 Available repositories:", style="cyan")
-                for repo in repositories:
-                    console.print(f"  • {repo['repo_name']} ({repo['repo_id']})", style="white")
-            return
-
-        repo_id = repo_info['repo_id']
-        repo_display_name = repo_info['repo_name']
-
-        # Show what will be removed
-        console.print(f"\n🗑️ Removing repository: {repo_display_name}")
-        console.print(f"📁 Repository ID: {repo_id}")
-        console.print(f"📂 Path: {repo_info.get('actual_path', 'Unknown')}")
-
-        actions = ["✅ Remove from workspace tracking"]
-
-        if not keep_embeddings:
-            actions.append("✅ Remove embeddings and vector indices")
-        else:
-            actions.append("⏭️ Keep embeddings")
-
-        if delete_files:
-            actions.append("⚠️ DELETE REPOSITORY FILES FROM DISK")
-        else:
-            actions.append("✅ Keep repository files on disk")
-
-        console.print("\n📋 Actions:")
-        for action in actions:
-            style = "red" if "DELETE" in action else "white"
-            console.print(f"  {action}", style=style)
-
-        # Confirmation prompt (unless forced)
-        if not force:
-            if delete_files:
-                console.print("\n⚠️ WARNING: --delete-files will permanently delete the repository from disk!",
-                              style="red bold")
-            confirm = typer.confirm(f"\nProceed with removing '{repo_display_name}'?")
-            if not confirm:
-                console.print("❌ Repository removal cancelled", style="yellow")
-                return
-
-        # Remove repository from workspace
-        success = codebase_manager.remove_repository(repo_id, delete_files=delete_files)
-
-        if not success:
-            console.print(f"❌ Failed to remove repository '{repo_display_name}' from workspace", style="red")
-            return
-
-        console.print(f"✅ Repository '{repo_display_name}' removed from workspace", style="green")
-
-        # Remove embeddings (unless keeping them)
-        if not keep_embeddings:
-            try:
-                embedding_success = embedding_manager.delete_embedding(repo_id)
-                if embedding_success:
-                    console.print("✅ Embeddings removed successfully", style="green")
-                else:
-                    console.print("⚠️ Failed to remove embeddings (they may not exist)", style="yellow")
-            except Exception as e:
-                console.print(f"⚠️ Warning: Failed to remove embeddings: {str(e)}", style="yellow")
-
-        if delete_files:
-            console.print("✅ Repository files deleted from disk", style="green")
-
-        console.print(f"\n🎉 Repository '{repo_display_name}' removal complete!", style="green bold")
-
-    except ImportError as e:
-        console.print(f"❌ Missing required components: {str(e)}", style="red")
-    except Exception as e:
-        console.print(f"❌ Error removing repository: {str(e)}", style="red")
-
-
-@codebase_app.command("clean-embeddings")
+    """Create embeddings for specified sources."""
+    manager = EmbeddingManager()
+    sources = []
+    if all_ or not any([codebase, issues, documents]):
+        sources = ["codebase", "issues", "docs"]
+    else:
+        if codebase:
+            sources.append("codebase")
+        if issues:
+            sources.append("issues")
+        if documents:
+            sources.append("docs")
+    console.print(f"Indexing sources: {', '.join(sources)}", style="cyan")
+    manager.index_sources(sources, force)
+
+@embeddings_app.command("clean")
 def clean_embeddings(
-        repo_name: str = typer.Argument(None,
-                                        help="Repository name/ID to clean (optional - cleans all if not specified)"),
-        force: bool = typer.Option(False, "--force", "-f", help="Force cleanup without confirmation")
+        source: str = typer.Option(None, "--source", help="Clean specific source (codebase/issues/docs)"),
+        force: bool = typer.Option(False, "--force", "-f", help="Force cleanup without confirmation"),
 ):
-    """🧹 Clean up embeddings for repositories
-
-    Remove embedding data and vector indices. This is useful for:
-    - Cleaning up after repository changes
-    - Freeing up disk space
-    - Removing stale embeddings for deleted repositories
-    """
-    try:
-        from .codebase.codebase_manager import SimpleCodebaseManager
-        from .codebase.embedding_manager import EmbeddingManager
-
-        codebase_manager = SimpleCodebaseManager()
-        embedding_manager = EmbeddingManager()
-
-        if repo_name:
-            # Clean specific repository
-            repositories = codebase_manager.list_repositories()
-            repo_info = None
-
-            for repo in repositories:
-                if repo['repo_name'] == repo_name or repo['repo_id'] == repo_name:
-                    repo_info = repo
-                    break
-
-            if not repo_info:
-                console.print(f"❌ Repository '{repo_name}' not found", style="red")
-                return
-
-            repo_id = repo_info['repo_id']
-
-            if not force:
-                confirm = typer.confirm(f"Remove embeddings for repository '{repo_info['repo_name']}'?")
-                if not confirm:
-                    console.print("❌ Embedding cleanup cancelled", style="yellow")
-                    return
-
-            success = embedding_manager.delete_embedding(repo_id)
-            if success:
-                console.print(f"✅ Embeddings cleaned for '{repo_info['repo_name']}'", style="green")
-            else:
-                console.print(f"❌ Failed to clean embeddings for '{repo_info['repo_name']}'", style="red")
-
-        else:
-            # Clean all embeddings
-            console.print("🧹 This will remove ALL embedding data and vector indices", style="yellow")
-
-            if not force:
-                confirm = typer.confirm("Are you sure you want to clean all embeddings?")
-                if not confirm:
-                    console.print("❌ Embedding cleanup cancelled", style="yellow")
-                    return
-
-            # Get all repositories and clean their embeddings
-            repositories = codebase_manager.list_repositories()
-            cleaned_count = 0
-            failed_count = 0
-
-            for repo in repositories:
-                try:
-                    success = embedding_manager.delete_embedding(repo['repo_id'])
-                    if success:
-                        cleaned_count += 1
-                        console.print(f"✅ Cleaned: {repo['repo_name']}", style="green")
-                    else:
-                        failed_count += 1
-                        console.print(f"⚠️ Failed: {repo['repo_name']}", style="yellow")
-                except Exception as e:
-                    failed_count += 1
-                    console.print(f"❌ Error cleaning {repo['repo_name']}: {str(e)}", style="red")
-
-            console.print(f"\n📊 Cleanup summary:")
-            console.print(f"  • Cleaned: {cleaned_count}")
-            console.print(f"  • Failed: {failed_count}")
-
-    except ImportError as e:
-        console.print(f"❌ Missing required components: {str(e)}", style="red")
-    except Exception as e:
-        console.print(f"❌ Error cleaning embeddings: {str(e)}", style="red")
-
-
-@codebase_app.command("purge")
-def purge_repository(
-        repo_name: str,
-        force: bool = typer.Option(False, "--force", "-f", help="Force purge without confirmation")
-):
-    """💥 DANGEROUS: Completely purge a repository
-
-    This removes EVERYTHING:
-    - Repository from workspace tracking
-    - All embeddings and vector indices
-    - Repository files from disk
-
-    ⚠️ WARNING: This action cannot be undone!
-    """
-    try:
-        from .codebase.codebase_manager import SimpleCodebaseManager
-
-        codebase_manager = SimpleCodebaseManager()
-
-        # Find repository by name or ID
-        repositories = codebase_manager.list_repositories()
-        repo_info = None
-
-        for repo in repositories:
-            if repo['repo_name'] == repo_name or repo['repo_id'] == repo_name:
-                repo_info = repo
-                break
-
-        if not repo_info:
-            console.print(f"❌ Repository '{repo_name}' not found", style="red")
+    """🧹 Clean up embeddings."""
+    manager = EmbeddingManager()
+    if not force:
+        confirm = typer.confirm("This action is irreversible. Continue?")
+        if not confirm:
+            console.print("❌ Cleanup cancelled", style="yellow")
             return
 
-        console.print(f"\n💥 PURGE REPOSITORY: {repo_info['repo_name']}", style="red bold")
-        console.print(f"📁 Repository ID: {repo_info['repo_id']}")
-        console.print(f"📂 Path: {repo_info.get('actual_path', 'Unknown')}")
+    manager.clean(source)
 
-        console.print("\n⚠️ THIS WILL PERMANENTLY DELETE:", style="red bold")
-        console.print("  • Repository from workspace", style="red")
-        console.print("  • All embeddings and indices", style="red")
-        console.print("  • All repository files from disk", style="red")
-        console.print("\n🚨 THIS ACTION CANNOT BE UNDONE!", style="red bold")
+    console.print(f"✅ Cleaned embeddings{' for ' + source if source else ''}", style="green")
 
-        if not force:
-            # Extra confirmation for purge
-            console.print(f"\nType the repository name to confirm: {repo_info['repo_name']}")
-            confirmation = typer.prompt("Repository name")
+@embeddings_app.command("stats")
+def embeddings_stats():
+    """📊 Show embedding statistics."""
+    manager = EmbeddingManager()
+    stats = manager.get_stats()
+    console.print(f"Embedding stats: {stats}", style="cyan")
 
-            if confirmation != repo_info['repo_name']:
-                console.print("❌ Repository name mismatch. Purge cancelled.", style="red")
-                return
-
-            final_confirm = typer.confirm("Are you absolutely sure you want to purge this repository?")
-            if not final_confirm:
-                console.print("❌ Repository purge cancelled", style="yellow")
-                return
-
-        # This is equivalent to remove with delete_files=True and keep_embeddings=False
-        success = codebase_manager.remove_repository(repo_info['repo_id'], delete_files=True)
-
-        if success:
-            # Also clean embeddings
-            try:
-                from .embedding.embedding_manager import EmbeddingManager
-                embedding_manager = EmbeddingManager()
-                embedding_manager.delete_embedding(repo_info['repo_id'])
-            except Exception as e:
-                console.print(f"⚠️ Warning: Failed to clean embeddings: {str(e)}", style="yellow")
-
-            console.print(f"\n💥 Repository '{repo_info['repo_name']}' has been completely purged", style="red bold")
-        else:
-            console.print(f"❌ Failed to purge repository '{repo_info['repo_name']}'", style="red")
-
-    except ImportError as e:
-        console.print(f"❌ Missing required components: {str(e)}", style="red")
-    except Exception as e:
-        console.print(f"❌ Error purging repository: {str(e)}", style="red")
-
+@embeddings_app.command("query")
+def query_embeddings(
+        query: str,
+        source: str = typer.Option("codebase", "--source", help="Source (codebase/issues/docs)"),
+        top_k: int = typer.Option(5, "--top-k", help="Number of results"),
+):
+    """🔍 Query embeddings."""
+    manager = EmbeddingManager()
+    results = manager.query(query, source, top_k)
+    console.print(f"Results: {results}", style="cyan")
 
 # ============================================================================
-# REPL Command Group
+# GEN COMMAND GROUP
 # ============================================================================
+gen_app = typer.Typer(help="✨ Generate code and artifacts")
+app.add_typer(gen_app, name="gen")
 
+# (gen_command logic remains unchanged)
+
+# ============================================================================
+# REPL
+# ============================================================================
 @app.command("repl")
 def repl(verbose: bool = typer.Option(False, "--verbose", "-v")):
     from prompt_toolkit import PromptSession
     session = PromptSession(completer=DaCrewCompleter())
-
     print("Starting REPL session...")
-    if verbose:
-        print("Verbose mode is enabled.")
-
     while True:
         try:
             user_input = session.prompt('>>> ')
@@ -1469,8 +447,8 @@ def repl(verbose: bool = typer.Option(False, "--verbose", "-v")):
 def process_command(command, verbose):
     if verbose:
         print(f"Processing command: {command}")
-    if command.startswith('codebase '):
-        codebase_command(command, verbose)
+    if command.startswith('embeddings '):
+        embeddings_command(command, verbose)
     elif command.startswith('issues '):
         issues_command(command, verbose)
     elif command.startswith('gen '):
@@ -1479,32 +457,28 @@ def process_command(command, verbose):
         print(f"Unknown command: {command}")
 
 
-import shlex
-
-
-def codebase_command(command: str, verbose: bool):
+def embeddings_command(command: str, verbose: bool):
     """
-    Handle 'codebase' commands within REPL mode by delegating to the Typer app.
+    Handle 'embeddings' commands within REPL mode by delegating to the Typer app.
     """
     if verbose:
-        console.print(f"Handling codebase command: {command}", style="dim")
+        console.print(f"Handling embeddings command: {command}", style="dim")
 
     try:
         # Split the command into arguments (like shell)
         args = shlex.split(command)
-        # Remove the leading 'codebase'
+        # Remove the leading 'embeddings'
         args = args[1:]
         if not args:
-            console.print("⚠️ No codebase subcommand provided. Type 'help codebase' for options.", style="yellow")
+            console.print("⚠️ No embeddings subcommand provided. Type 'help embeddings' for options.", style="yellow")
             return
 
-        # Invoke Typer's codebase_app
-        codebase_app(args)
+        embeddings_app(args)
     except SystemExit:
         # Typer may call sys.exit(), catch it to prevent REPL from exiting
         pass
     except Exception as e:
-        console.print(f"❌ Error handling codebase command: {str(e)}", style="red")
+        console.print(f"❌ Error handling embeddings command: {str(e)}", style="red")
 
 
 def issues_command(command: str, verbose: bool):
@@ -1589,13 +563,10 @@ def gen_command(command: str, verbose: bool):
 
 
 # ============================================================================
-# Main CLI Entry Point
+# MAIN
 # ============================================================================
-
 def main():
-    """Main CLI entry point"""
     app()
-
 
 if __name__ == "__main__":
     main()

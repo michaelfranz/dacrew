@@ -1,16 +1,17 @@
 """Simple codebase management for workspace operations - Git and filesystem only"""
 
-import os
+import hashlib
 import json
+import os
+import platform
 import shutil
 import subprocess
-from pathlib import Path
-from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime
-import platform
-import hashlib
+from pathlib import Path
+from typing import Dict, Any, Optional, Tuple
 
 from .exceptions import WorkspaceError, GitCloneError
+
 
 # ============================================================================
 # Cross-Platform Link Management
@@ -98,6 +99,29 @@ class CrossPlatformLinkManager:
 # ============================================================================
 # Simplified Codebase Manager - Git and filesystem operations only
 # ============================================================================
+
+def _get_remote_branches(repo_url: str) -> list:
+    """Get list of available remote branches (best effort)"""
+    try:
+        result = subprocess.run(
+            ["git", "ls-remote", "--heads", repo_url],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if result.returncode == 0:
+            branches = []
+            for line in result.stdout.strip().split('\n'):
+                if line and '\trefs/heads/' in line:
+                    branch_name = line.split('\trefs/heads/')[-1]
+                    branches.append(branch_name)
+            return branches[:10]  # Limit to first 10 branches
+    except:
+        pass
+
+    return []
+
 
 class SimpleCodebaseManager:
     """Manager for repository operations with current selection - No embedding dependencies"""
@@ -257,108 +281,6 @@ class SimpleCodebaseManager:
 
         return target_path, detected_branch
 
-    def _switch_to_existing_repository(self, repo_id: str, repos_info: Dict[str, Any]) -> Tuple[Path, str]:
-        """Switch to an existing repository"""
-        repos_info["current"] = repo_id
-
-        # Update current symlink
-        existing_path = Path(repos_info["repositories"][repo_id]["actual_path"])
-        link_status = self.link_manager.create_link(self.current_link, existing_path)
-
-        # Update symlink status
-        repos_info["repositories"][repo_id]["symlink_status"] = link_status
-        repos_info["repositories"][repo_id]["last_accessed"] = datetime.now().isoformat()
-
-        self._save_repositories_info(repos_info)
-
-        return existing_path, repos_info["repositories"][repo_id]["branch"]
-
-    def set_current_codebase(self, repo_identifier: str) -> bool:
-        """Switch to a different repository by repo_id or repo_name"""
-        repos_info = self.get_repositories_info()
-
-        # Find repository by ID or name
-        target_repo_id = None
-        for repo_id, repo_info in repos_info["repositories"].items():
-            if repo_id == repo_identifier or repo_info["repo_name"] == repo_identifier:
-                target_repo_id = repo_id
-                break
-
-        if not target_repo_id:
-            raise WorkspaceError(f"Repository '{repo_identifier}' not found")
-
-        # Check if target repository still exists
-        target_path = Path(repos_info["repositories"][target_repo_id]["actual_path"])
-        if not target_path.exists():
-            raise WorkspaceError(f"Repository directory not found: {target_path}")
-
-        # Switch to repository
-        self._switch_to_existing_repository(target_repo_id, repos_info)
-
-        return True
-
-    def list_repositories(self) -> List[Dict[str, Any]]:
-        """List all registered repositories with their status"""
-        repos_info = self.get_repositories_info()
-        repositories = []
-        
-        for repo_id, repo_info in repos_info["repositories"].items():
-            repo_copy = repo_info.copy()
-            
-            # Fix the path checking - use absolute path resolution
-            actual_path = Path(repo_info["actual_path"])
-            if not actual_path.is_absolute():
-                # If it's relative, resolve it against the workspace root
-                actual_path = self.workspace_root / actual_path
-            
-            # Check if the path exists
-            repo_copy["exists"] = actual_path.exists()
-            
-            # Also store the resolved absolute path for clarity
-            repo_copy["resolved_path"] = str(actual_path.resolve())
-            
-            repositories.append(repo_copy)
-        
-        return repositories
-
-    def remove_repository(self, repo_identifier: str, delete_files: bool = False) -> bool:
-        """Remove a repository from workspace"""
-        repos_info = self.get_repositories_info()
-
-        # Find repository
-        target_repo_id = None
-        for repo_id, repo_info in repos_info["repositories"].items():
-            if repo_id == repo_identifier or repo_info["repo_name"] == repo_identifier:
-                target_repo_id = repo_id
-                break
-
-        if not target_repo_id:
-            raise WorkspaceError(f"Repository '{repo_identifier}' not found")
-
-        repo_info = repos_info["repositories"][target_repo_id]
-
-        # If this is the current repository, clear the current link
-        if repos_info.get("current") == target_repo_id:
-            if self.current_link.exists():
-                if self.current_link.is_symlink():
-                    self.current_link.unlink()
-                elif self.current_link.is_dir():
-                    shutil.rmtree(self.current_link)
-            repos_info["current"] = None
-
-        # Delete files if requested
-        if delete_files:
-            repo_path = Path(repo_info["actual_path"])
-            if repo_path.exists():
-                shutil.rmtree(repo_path)
-
-        # Remove from repositories info
-        del repos_info["repositories"][target_repo_id]
-
-        # Save updated info
-        self._save_repositories_info(repos_info)
-
-        return True
 
     def update_codebase(self, progress_callback: Optional[callable] = None) -> bool:
         """Update current codebase (git pull)"""
@@ -403,50 +325,6 @@ class SimpleCodebaseManager:
     # ============================================================================
     # Workspace Management
     # ============================================================================
-
-    def clear_workspace(self):
-        """Clear the entire workspace (all repositories)"""
-        try:
-            # Remove the 'current' link/directory
-            if self.current_link.exists():
-                if self.current_link.is_symlink():
-                    self.current_link.unlink()
-                elif self.current_link.is_dir():
-                    shutil.rmtree(self.current_link)
-
-            # Remove all repository directories
-            if self.repos_dir.exists():
-                shutil.rmtree(self.repos_dir)
-                self.repos_dir.mkdir(exist_ok=True)
-
-            # Remove repositories info file
-            if self.info_file.exists():
-                self.info_file.unlink()
-
-        except Exception as e:
-            raise WorkspaceError(f"Failed to clear workspace: {str(e)}")
-
-    def cleanup_workspace(self) -> Dict[str, List[str]]:
-        """Clean up orphaned files and inconsistencies"""
-        cleaned = {
-            "missing_repositories": [],
-            "orphaned_symlinks": []
-        }
-
-        # Check for missing repositories
-        repos_info = self.get_repositories_info()
-        for repo_id, repo_info in repos_info["repositories"].items():
-            repo_path = Path(repo_info["actual_path"])
-            if not repo_path.exists():
-                cleaned["missing_repositories"].append(repo_id)
-
-        # Check for orphaned current link
-        if self.current_link.exists():
-            resolved = self._resolve_current_link()
-            if not resolved or not resolved.exists():
-                cleaned["orphaned_symlinks"].append("current")
-
-        return cleaned
 
     def get_workspace_status(self) -> Dict[str, Any]:
         """Get comprehensive workspace status"""
@@ -504,7 +382,8 @@ class SimpleCodebaseManager:
         repo_name = self._extract_repo_name(repo_url)
         return f"{repo_name}_{url_hash}"
 
-    def _extract_repo_name(self, repo_url: str) -> str:
+    @staticmethod
+    def _extract_repo_name(repo_url: str) -> str:
         """Extract repository name from URL"""
         try:
             # Handle different URL formats
@@ -525,7 +404,8 @@ class SimpleCodebaseManager:
         except:
             return "repository"
 
-    def _is_valid_git_url(self, url: str) -> bool:
+    @staticmethod
+    def _is_valid_git_url(url: str) -> bool:
         """Basic validation of git URL"""
         try:
             # Basic patterns for git URLs
@@ -547,7 +427,8 @@ class SimpleCodebaseManager:
         except:
             return False
 
-    def _calculate_repo_size(self, repo_path: Path) -> float:
+    @staticmethod
+    def _calculate_repo_size(repo_path: Path) -> float:
         """Calculate repository size in MB"""
         try:
             if not repo_path.exists():
@@ -593,7 +474,7 @@ class SimpleCodebaseManager:
                     raise
 
         # All branches failed - get list of available branches and provide helpful error
-        available_branches = self._get_remote_branches(repo_url)
+        available_branches = _get_remote_branches(repo_url)
 
         if available_branches:
             raise GitCloneError(
@@ -608,29 +489,8 @@ class SimpleCodebaseManager:
                 f"Last error: {last_error}"
             )
 
-    def _get_remote_branches(self, repo_url: str) -> list:
-        """Get list of available remote branches (best effort)"""
-        try:
-            result = subprocess.run(
-                ["git", "ls-remote", "--heads", repo_url],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-
-            if result.returncode == 0:
-                branches = []
-                for line in result.stdout.strip().split('\n'):
-                    if line and '\trefs/heads/' in line:
-                        branch_name = line.split('\trefs/heads/')[-1]
-                        branches.append(branch_name)
-                return branches[:10]  # Limit to first 10 branches
-        except:
-            pass
-
-        return []
-
-    def _clone_repository(self, repo_url: str, branch: str, shallow: bool,
+    @staticmethod
+    def _clone_repository(repo_url: str, branch: str, shallow: bool,
                           target_path: Path):
         """Clone git repository to specific path"""
 
@@ -659,7 +519,7 @@ class SimpleCodebaseManager:
                 env=env,
                 capture_output=True,
                 text=True,
-                timeout=600  # 10 minute timeout for large repos
+                timeout=600  # 10-minute timeout for large repos
             )
 
             if result.returncode != 0:

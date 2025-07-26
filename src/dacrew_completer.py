@@ -15,17 +15,20 @@ COMMANDS = {
             "index": [
                 "--codebase",      # Index codebase
                 "--issues",        # Index issues
-                "--documents",     # Index docs
-                "--all"            # Index all sources
+                "--documents"      # Index docs
             ],
             "query": [
+                "--codebase",      # Query codebase
+                "--issues",        # Query issues
+                "--documents",     # Query docs
                 "--top-k",
-                "--source",        # Filter by source (codebase/issues/docs)
             ],
             "stats": [],
             "clean": [
                 "--force",
-                "--source",        # Clean specific source
+                "--codebase",      # Clean codebase
+                "--issues",        # Clean issues
+                "--documents",     # Clean docs
             ]
         }
     },

@@ -2,10 +2,10 @@
 Embedding management for DaCrew - Handles embeddings for codebase, issues, and documents.
 """
 
-import os
-from pathlib import Path
-from typing import List, Dict, Any
+import shutil
 from dataclasses import dataclass
+from pathlib import Path
+from typing import List
 
 from rich.console import Console
 
@@ -44,39 +44,54 @@ class EmbeddingManager:
     # ------------------------
     # INDEXING
     # ------------------------
-    def index_codebase(self, path: str, include_patterns: List[str] = None, exclude_patterns: List[str] = None):
+    def index_codebase(self):
         """
         Index source code into vector embeddings.
         """
+        path = ""
         console.print(f"📦 Indexing codebase at: {path}", style="cyan")
         # TODO: Walk files, chunk code, embed, and store in codebase vector DB.
 
-    def index_issues(self, issues: List[Dict[str, Any]]):
+    def index_issues(self):
         """
         Index Jira issues into vector embeddings.
         """
+        issues = []
         console.print(f"📝 Indexing {len(issues)} Jira issues...", style="cyan")
         # TODO: Convert issues to text and embed.
 
-    def index_documents(self, paths: List[str], urls: List[str]):
+    def index_documents(self):
         """
         Index documents (local + web).
         """
+        paths = []
+        urls = []
         console.print(f"📚 Indexing documents: {len(paths)} local files, {len(urls)} URLs.", style="cyan")
         # TODO: Extract text (PDF, Word, etc.), embed, and store.
 
-    def index_sources(self, sources, force):
-        pass
-
+    def index_sources(self, sources: list[str], force):
+        if "codebase" in sources:
+            self.index_codebase()
+        elif "issues" in sources:
+            self.index_issues()
+        elif "documents" in sources:
+            self.index_documents()
 
     # ------------------------
     # QUERY
     # ------------------------
-    def query_embeddings(self, query: str, top_k: int = 5) -> List[EmbeddingResult]:
+    def query(self, query: str, sources: List[str], top_k: int = 5) -> List[EmbeddingResult]:
         """
         Query across all embedding stores (codebase, issues, documents) and return a unified result set.
         """
         console.print(f"🔍 Querying embeddings for: {query}", style="green")
+
+        # TODO: Perform vector search in each store
+        # codebase_hits = self.codebase_store.search(query, top_k=top_k)
+        # issues_hits = self.issues_store.search(query, top_k=top_k)
+        # documents_hits = self.documents_store.search(query, top_k=top_k)
+
+        # For now, return dummy results
 
         results: List[EmbeddingResult] = [
             EmbeddingResult(content="Example code snippet", source="codebase", reference="src/example.py",
@@ -86,37 +101,40 @@ class EmbeddingManager:
             EmbeddingResult(content="Example document excerpt", source="documents", reference="architecture.md",
                             similarity=0.85)]
 
-        # TODO: Perform vector search in each store
-        # codebase_hits = self.codebase_store.search(query, top_k=top_k)
-        # issues_hits = self.issues_store.search(query, top_k=top_k)
-        # documents_hits = self.documents_store.search(query, top_k=top_k)
-
-        # For now, return dummy results
-
         return sorted(results, key=lambda r: r.similarity, reverse=True)
 
+    # ------------------------
+    # CLEANING
+    # ------------------------
+    @staticmethod
+    def _clean_directory(directory: Path, name: str):
+        if not directory.exists() or not any(directory.iterdir()):
+            console.print(f"⚠️ No {name} embeddings found to clean.", style="yellow")
+            return
+
+        try:
+            shutil.rmtree(directory)
+            directory.mkdir(parents=True, exist_ok=True)  # Recreate the empty directory
+            console.print(f"✅ {name.capitalize()} embeddings cleaned successfully.", style="green")
+        except Exception as e:
+            console.print(f"❌ Failed to clean {name} embeddings: {e}", style="red")
 
     def clean_codebase(self):
-        print(f"Error: clean_codebase not implemented.")
-        pass
+        self._clean_directory(self.codebase_dir, "codebase")
 
     def clean_issues(self):
-        print(f"Error: clean_issues not implemented.")
-        pass
+        self._clean_directory(self.issues_dir, "issues")
 
-    def clean_docs(self):
-        print(f"Error: clean_docs not implemented.")
-        pass
+    def clean_documents(self):
+        self._clean_directory(self.documents_dir, "documents")
 
-    def clean(self, source: str):
-        if source == "codebase":
+    def clean(self, sources: List[str]):
+        if "codebase" in sources:
             self.clean_codebase()
-        elif source == "issues":
+        elif "issues" in sources:
             self.clean_issues()
-        elif source == "docs":
-            self.clean_docs()
-        else:
-            print(f"Error: '{source}' is not a valid source.")
+        elif "documents" in sources:
+            self.clean_documents()
 
     def get_stats(self):
         pass

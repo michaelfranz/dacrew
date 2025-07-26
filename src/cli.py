@@ -14,6 +14,11 @@ app = typer.Typer(
 )
 console = Console()
 
+from .config import Config
+
+config = Config.load()
+project_id = config.project
+
 GLOBAL_EXAMPLE_CONFIG_CONTENT = """
 # ~/.dacrew/config.yml
 # Global configuration for DaCrew.
@@ -363,57 +368,53 @@ def index_embeddings(
         codebase: bool = typer.Option(False, "--codebase", help="Index codebase"),
         issues: bool = typer.Option(False, "--issues", help="Index issues"),
         documents: bool = typer.Option(False, "--documents", help="Index documents"),
-        all_: bool = typer.Option(False, "--all", help="Index all sources"),
         force: bool = typer.Option(False, "--force", "-f", help="Force re-indexing"),
 ):
     """Create embeddings for specified sources."""
-    manager = EmbeddingManager()
-    sources = []
-    if all_ or not any([codebase, issues, documents]):
-        sources = ["codebase", "issues", "docs"]
-    else:
-        if codebase:
-            sources.append("codebase")
-        if issues:
-            sources.append("issues")
-        if documents:
-            sources.append("docs")
+    manager = EmbeddingManager(project_id)
+    sources = _get_sources(codebase, issues, documents)
     console.print(f"Indexing sources: {', '.join(sources)}", style="cyan")
     manager.index_sources(sources, force)
 
 @embeddings_app.command("clean")
 def clean_embeddings(
-        source: str = typer.Option(None, "--source", help="Clean specific source (codebase/issues/docs)"),
-        force: bool = typer.Option(False, "--force", "-f", help="Force cleanup without confirmation"),
+        codebase: bool = typer.Option(False, "--codebase", help="Index codebase"),
+        issues: bool = typer.Option(False, "--issues", help="Index issues"),
+        documents: bool = typer.Option(False, "--documents", help="Index documents"),
+        force: bool = typer.Option(False, "--force", "-f", help="Force re-indexing"),
 ):
     """🧹 Clean up embeddings."""
-    manager = EmbeddingManager()
+    manager = EmbeddingManager(project_id)
     if not force:
         confirm = typer.confirm("This action is irreversible. Continue?")
         if not confirm:
             console.print("❌ Cleanup cancelled", style="yellow")
             return
 
-    manager.clean(source)
+    sources = _get_sources(codebase, issues, documents)
+    console.print(f"Cleaning sources: {', '.join(sources)}", style="cyan")
+    manager.clean(sources)
 
-    console.print(f"✅ Cleaned embeddings{' for ' + source if source else ''}", style="green")
 
 @embeddings_app.command("stats")
 def embeddings_stats():
     """📊 Show embedding statistics."""
-    manager = EmbeddingManager()
+    manager = EmbeddingManager(project_id)
     stats = manager.get_stats()
     console.print(f"Embedding stats: {stats}", style="cyan")
 
 @embeddings_app.command("query")
 def query_embeddings(
         query: str,
-        source: str = typer.Option("codebase", "--source", help="Source (codebase/issues/docs)"),
+        codebase: bool = typer.Option(False, "--codebase", help="Index codebase"),
+        issues: bool = typer.Option(False, "--issues", help="Index issues"),
+        documents: bool = typer.Option(False, "--documents", help="Index documents"),
         top_k: int = typer.Option(5, "--top-k", help="Number of results"),
 ):
     """🔍 Query embeddings."""
     manager = EmbeddingManager()
-    results = manager.query(query, source, top_k)
+    sources = _get_sources(codebase, issues, documents)
+    results = manager.query(query, sources, top_k)
     console.print(f"Results: {results}", style="cyan")
 
 # ============================================================================
@@ -560,6 +561,19 @@ def gen_command(command: str, verbose: bool):
         pass
     except Exception as e:
         console.print(f"❌ Error handling gen command: {str(e)}", style="red")
+
+def _get_sources(codebase, issues, documents):
+    sources = []
+    if not any([codebase, issues, documents]):
+        sources = ["codebase", "issues", "docs"]
+    else:
+        if codebase:
+            sources.append("codebase")
+        if issues:
+            sources.append("issues")
+        if documents:
+            sources.append("docs")
+    return sources
 
 
 # ============================================================================

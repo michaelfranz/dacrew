@@ -90,7 +90,7 @@ class CodebaseEmbeddingManager(AbstractEmbeddingManager):
                 content=doc.page_content,
                 source="codebase",  # or "issues", "documents"
                 reference=doc.metadata.get("reference", ""),
-                similarity=1 - score  # if using distance, convert to similarity
+                similarity=score  # if using distance, convert to similarity
             )
             for doc, score in hits
         ]
@@ -147,10 +147,9 @@ class CodebaseEmbeddingManager(AbstractEmbeddingManager):
         """
         Embed changed files in batches.
         """
-        embeddings = OpenAIEmbeddings(api_key=config.ai.openai_api_key)
 
         try:
-            db = FAISS.load_local(str(self.codebase_dir), embeddings)
+            db = FAISS.load_local(str(self.codebase_dir), self.embedding_fn)
         except Exception:
             db = None
 
@@ -177,7 +176,7 @@ class CodebaseEmbeddingManager(AbstractEmbeddingManager):
             if db:
                 db.add_documents(chunks)
             else:
-                db = FAISS.from_documents(chunks, embeddings)
+                db = FAISS.from_documents(chunks, self.embedding_fn)
 
         if db:
             db.save_local(str(self.codebase_dir))

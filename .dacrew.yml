@@ -38,7 +38,6 @@ embedding:
   # ---------------------------------------------------------
   documents:
     paths:
-      - "docs/Object-Oriented-Python.docx"
       - "docs/Python_CLI_Application.pdf"
       - "docs/Python_Tips.txt"
       - "docs/README.me"

@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Optional
 from jira import JIRA
 from jira.exceptions import JIRAError
 
-from .config import Config
+from .config import JiraConfig
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class JiraClient:
     """Enhanced Jira client with AI-friendly methods"""
 
-    def __init__(self, config: Config):
+    def __init__(self, config: JiraConfig):
         self.config = config
         self._client = None
         self._connect()
@@ -24,8 +24,8 @@ class JiraClient:
         """Establish connection to Jira"""
         try:
             self._client = JIRA(
-                server=self.config.jira.url,
-                basic_auth=(self.config.jira.username, self.config.jira.api_token)
+                server=self.config.url,
+                basic_auth=(self.config.user_id, self.config.api_token)
             )
             logger.info("Successfully connected to Jira")
         except JIRAError as e:
@@ -495,5 +495,5 @@ class JiraClient:
             'labels': getattr(issue.fields, 'labels', []),
             'components': [comp.name for comp in getattr(issue.fields, 'components', [])],
             'fix_versions': [ver.name for ver in getattr(issue.fields, 'fixVersions', [])],
-            'url': f"{self.config.jira.url}/browse/{issue.key}"
+            'url': f"{self.config.url}/browse/{issue.key}"
         }

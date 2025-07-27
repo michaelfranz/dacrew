@@ -31,8 +31,7 @@ embedding:
   # Jira Issues Embedding
   # ---------------------------------------------------------
   issues:
-    include_statuses: ["To Do", "In Progress", "Done"]
-    exclude_statuses: ["Deleted", "Archived"]
+    exclude_statuses: ["Cancelled", "Archived"]
 
   # ---------------------------------------------------------
   # Documents & Web Embedding
@@ -78,6 +77,9 @@ jira:
 
   # Default user ID (often the username or email)
   user_id: "mike.mannion@karakun.com"
+
+  # Maximum number of jira issues fetched for any query
+  fetch_limit: 500
 
 # =====================================================================
 # AI and Embeddings

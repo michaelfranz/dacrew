@@ -1,6 +1,9 @@
 import hashlib
+import json
+import os
 import shutil
 from pathlib import Path
+from typing import Dict
 
 from rich.console import Console
 
@@ -36,10 +39,21 @@ def _get_files(base_path, include_patterns, exclude_patterns):
     return all_files
 
 
-def _hash_file(path: Path) -> str:
-    """Generate a hash of the file contents (for incremental updates)."""
-    hasher = hashlib.sha256()
-    with open(path, "rb") as f:
-        while chunk := f.read(8192):
-            hasher.update(chunk)
-    return hasher.hexdigest()
+def _hash_file(file_path: Path) -> str:
+    """Return SHA1 hash of a file."""
+    h = hashlib.sha1()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):  # 64KB chunks
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _hash_file(file_path: Path) -> str:
+    """Return SHA1 hash of a file."""
+    h = hashlib.sha1()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):  # 64KB chunks
+            h.update(chunk)
+    return h.hexdigest()
+
+

@@ -14,6 +14,7 @@ class JiraConfig:
     url: str
     jira_project_key: str
     user_id: str
+    fetch_limit: int = 500
     api_token: str = ""   # From global config only
 
 
@@ -38,8 +39,8 @@ class CodebaseEmbeddingConfig:
 
 @dataclass
 class IssuesEmbeddingConfig:
-    include_statuses: List[str] = field(default_factory=lambda: ["To Do", "In Progress", "Done"])
-    exclude_statuses: List[str] = field(default_factory=lambda: ["Deleted", "Archived"])
+    include_statuses: List[str] = field(default_factory=lambda: None)
+    exclude_statuses: List[str] = field(default_factory=lambda: ["Cancelled"])
 
 
 @dataclass
@@ -115,8 +116,8 @@ class Config:
                     exclude_patterns=embedding_conf.get("codebase", {}).get("exclude_patterns", ["node_modules/**", "build/**"]),
                 ),
                 issues=IssuesEmbeddingConfig(
-                    include_statuses=embedding_conf.get("issues", {}).get("include_statuses", ["To Do", "In Progress", "Done"]),
-                    exclude_statuses=embedding_conf.get("issues", {}).get("exclude_statuses", ["Deleted", "Archived"]),
+                    include_statuses=embedding_conf.get("issues", {}).get("include_statuses", []),
+                    exclude_statuses=embedding_conf.get("issues", {}).get("exclude_statuses", ["Cancelled"]),
                 ),
                 documents=DocumentsEmbeddingConfig(
                     paths=embedding_conf.get("documents", {}).get("paths", []),

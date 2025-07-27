@@ -89,6 +89,9 @@ jira:
 
   # Default user ID (often the username or email)
   user_id: "john.doe"
+  
+  # The maximum number of issues fetched in a given query
+  fetch_limit: 500
 
 # =====================================================================
 # AI and Embeddings
@@ -192,6 +195,9 @@ jira:
   # Default user ID (often the username or email)
   user_id: "john.doe"
 
+  # The maximum number of issues fetched in a given query
+  fetch_limit: 500
+
 # =====================================================================
 # AI and Embeddings
 # =====================================================================
@@ -288,7 +294,7 @@ def list_issues(
         from .jira_client import JiraClient
 
         config = Config.load()
-        client = JiraClient(config)
+        client = JiraClient(config.jira)
 
         # Build JQL query
         jql_parts = []
@@ -481,11 +487,15 @@ def clean_embeddings(
 
 
 @embeddings_app.command("stats")
-def embeddings_stats():
+def embeddings_stats(
+        codebase: bool = typer.Option(False, "--codebase", help="Index codebase"),
+        issues: bool = typer.Option(False, "--issues", help="Index issues"),
+        documents: bool = typer.Option(False, "--documents", help="Index documents")):
     """📊 Show embedding statistics."""
     manager = EmbeddingManager(_get_config().project)
-    stats = manager.get_stats()
+    stats = _get_stats(codebase, issues, documents)
     console.print(f"Embedding stats: {stats}", style="cyan")
+    manager.get_stats(stats)
 
 @embeddings_app.command("query")
 def query_embeddings(
@@ -496,10 +506,16 @@ def query_embeddings(
         top_k: int = typer.Option(5, "--top-k", help="Number of results"),
 ):
     """🔍 Query embeddings."""
-    manager = EmbeddingManager()
+    manager = EmbeddingManager(_get_config().project)
     sources = _get_sources(codebase, issues, documents)
     results = manager.query(query, sources, top_k)
-    console.print(f"Results: {results}", style="cyan")
+    console.print("Results:", style="cyan")
+    for i, result in enumerate(results, start=1):
+        console.print("─" * 50, style="dim")
+        console.print(f"[{i}] Source: {result.source} | Similarity: {result.similarity:.2f}", style="yellow")
+        if result.reference:
+            console.print(f"Reference: {result.reference}", style="blue")
+        console.print(result.content, style="green")
 
 # ============================================================================
 # GEN COMMAND GROUP
@@ -658,6 +674,19 @@ def _get_sources(codebase, issues, documents):
         if documents:
             sources.append("docs")
     return sources
+
+def _get_stats(codebase, issues, documents):
+    stats = []
+    if not any([codebase, issues, documents]):
+        stats = ["codebase", "issues", "docs"]
+    else:
+        if codebase:
+            stats.append("codebase")
+        if issues:
+            stats.append("issues")
+        if documents:
+            stats.append("docs")
+    return stats
 
 def _get_config():
     from .config import Config

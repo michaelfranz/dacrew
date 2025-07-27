@@ -1,3 +1,4 @@
+import shlex
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.document import Document
 from prompt_toolkit.completion import CompleteEvent
@@ -13,22 +14,26 @@ COMMANDS = {
         "subcommands": ["index", "query", "stats", "clean"],
         "options": {
             "index": [
-                "--codebase",      # Index codebase
-                "--issues",        # Index issues
-                "--documents"      # Index docs
+                "--codebase",
+                "--issues",
+                "--documents"
             ],
             "query": [
-                "--codebase",      # Query codebase
-                "--issues",        # Query issues
-                "--documents",     # Query docs
+                "--codebase",
+                "--issues",
+                "--documents",
                 "--top-k",
             ],
-            "stats": [],
+            "stats": [
+                "--codebase",
+                "--issues",
+                "--documents",
+            ],
             "clean": [
                 "--force",
-                "--codebase",      # Clean codebase
-                "--issues",        # Clean issues
-                "--documents",     # Clean docs
+                "--codebase",
+                "--issues",
+                "--documents",
             ]
         }
     },
@@ -52,10 +57,17 @@ COMMANDS = {
 
 class DaCrewCompleter(Completer):
     def get_completions(
-            self, document: Document, complete_event: CompleteEvent
+        self, document: Document, complete_event: CompleteEvent
     ) -> Iterable[Completion]:
         text = document.text_before_cursor.strip()
-        words = text.split()
+
+        try:
+            words = shlex.split(text)  # Handles quoted arguments as single tokens
+        except ValueError:
+            words = text.split()  # Fallback if quotes are not closed
+
+        # Current token being completed
+        current = document.get_word_before_cursor()
 
         if len(words) == 0:
             # Suggest top-level commands
@@ -63,14 +75,12 @@ class DaCrewCompleter(Completer):
                 yield Completion(cmd, start_position=0)
 
         elif len(words) == 1:
-            # First-level completion: top-level commands
             first_word = words[0]
             if first_word in COMMANDS:
                 # Command fully typed, show subcommands
                 for sub in COMMANDS[first_word]["subcommands"]:
                     yield Completion(sub, start_position=0)
             else:
-                # Suggest matching commands
                 for cmd in COMMANDS:
                     if cmd.startswith(first_word):
                         yield Completion(cmd, start_position=-len(first_word))
@@ -80,34 +90,35 @@ class DaCrewCompleter(Completer):
             cmd_info = COMMANDS.get(first_word)
 
             if cmd_info:
-                options = cmd_info.get("options")
                 subcommands = cmd_info.get("subcommands", [])
+                options = cmd_info.get("options")
 
-                # Case: subcommand with its own options
-                if isinstance(options, dict) and second_word in subcommands and second_word in options:
-                    for opt in options[second_word]:
-                        yield Completion(opt, start_position=0)
+                # Subcommand suggestions
+                for sub in subcommands:
+                    if sub.startswith(second_word):
+                        yield Completion(sub, start_position=-len(second_word))
 
-                # Case: subcommand completion
-                else:
-                    for sub in subcommands:
-                        if sub.startswith(second_word):
-                            yield Completion(sub, start_position=-len(second_word))
-
-                # Case: top-level options (list)
+                # Top-level options (if a flat list exists)
                 if isinstance(options, list):
                     for opt in options:
                         if opt.startswith(second_word):
                             yield Completion(opt, start_position=-len(second_word))
 
-        elif len(words) >= 3:
+        else:
+            # len(words) >= 3
             first_word = words[0]
             subcommand = words[1]
-            current = words[-1]
             cmd_info = COMMANDS.get(first_word)
 
             if cmd_info and subcommand in cmd_info.get("subcommands", []):
                 sub_opts = cmd_info.get("options", {}).get(subcommand, [])
+                current = words[-1]
+
+                # Check if we are still in the quoted argument (no completions inside quotes)
+                if text.count('"') % 2 == 1 and not current.startswith("--"):
+                    return  # Do not suggest options inside an open quote
+
+                # Suggest options starting with current token
                 for opt in sub_opts:
                     if opt.startswith(current):
                         yield Completion(opt, start_position=-len(current))

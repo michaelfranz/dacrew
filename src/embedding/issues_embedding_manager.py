@@ -16,12 +16,13 @@ from rich.console import Console
 from .abstract_embedding_manager import AbstractEmbeddingManager, EmbeddingResult
 from .codebase_embedding_manager import config
 from .embedding_utils import _clean_directory
+from .hybrid_query_mixin import HybridQueryMixin
 from ..jira_client import JiraClient
 
 console = Console()
 
 
-class IssuesEmbeddingManager(AbstractEmbeddingManager):
+class IssuesEmbeddingManager(AbstractEmbeddingManager, HybridQueryMixin):
     def __init__(self, project_key: str, issues_dir: Path):
         self.project_key = project_key
         self.issues_dir = issues_dir
@@ -83,13 +84,11 @@ class IssuesEmbeddingManager(AbstractEmbeddingManager):
         ]
 
         # Re-rank results
-        results = _rerank_by_keyword(query, results)
+        results = self._rerank_by_keyword(query, results)
         final_results = results[:top_k]
 
         if debug:
-            console.print(f"[DEBUG] Query: {query}", style="cyan")
-            for r in final_results:
-                console.print(f"[{r.similarity:.3f}] {r.reference} -> {r.content[:120]}...", style="dim")
+            self._debug_print_results(query, results)
 
         return final_results
 
@@ -100,20 +99,6 @@ class IssuesEmbeddingManager(AbstractEmbeddingManager):
             self.embedding_fn,
             allow_dangerous_deserialization=True
         )
-
-
-def _rerank_by_keyword(query: str, results: List[EmbeddingResult], boost: float = 0.2) -> List[EmbeddingResult]:
-    """
-    Re-rank results by keyword overlap with the query.
-    boost: How much to increase the similarity score per keyword match.
-    """
-    import re
-    query_terms = re.findall(r"\w+", query.lower())
-    for r in results:
-        content_lower = r.content.lower()
-        keyword_matches = sum(1 for term in query_terms if term in content_lower)
-        r.similarity += keyword_matches * boost
-    return sorted(results, key=lambda x: x.similarity, reverse=True)
 
 
 def _collect_issues(

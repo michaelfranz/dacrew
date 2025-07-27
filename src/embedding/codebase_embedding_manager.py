@@ -18,13 +18,14 @@ from rich.console import Console
 
 from .abstract_embedding_manager import AbstractEmbeddingManager, EmbeddingResult
 from .embedding_utils import _clean_directory, _hash_file
+from .hybrid_query_mixin import HybridQueryMixin
 from ..config import Config
 
 console = Console()
 config = Config.load()
 
 
-class CodebaseEmbeddingManager(AbstractEmbeddingManager):
+class CodebaseEmbeddingManager(AbstractEmbeddingManager, HybridQueryMixin):
     BATCH_SIZE = 50  # Number of files to embed in one batch (for memory safety)
 
     def __init__(self, project_key: str, codebase_dir: Path):
@@ -65,7 +66,6 @@ class CodebaseEmbeddingManager(AbstractEmbeddingManager):
 
         # Save new manifest
         _save_manifest(manifest_path, files, base_path)
-
         console.print(f"Manifest updated at: {manifest_path}", style="cyan")
 
     def clean(self):
@@ -82,18 +82,30 @@ class CodebaseEmbeddingManager(AbstractEmbeddingManager):
             manifest = json.load(f)
         return {"files_indexed": len(manifest.get("files", {}))}
 
-    def query(self, query: str, top_k: int = 5) -> List[EmbeddingResult]:
+    def query(self, query: str, top_k: int = 5, debug: bool = False) -> List[EmbeddingResult]:
         store = self._load_vector_store()
-        hits = store.similarity_search_with_score(query, k=top_k)
-        return [
+
+        # Get more candidates before reranking
+        hits = store.similarity_search_with_score(query, k=top_k * 2)
+
+        results = [
             EmbeddingResult(
                 content=doc.page_content,
-                source="codebase",  # or "issues", "documents"
-                reference=doc.metadata.get("reference", ""),
-                similarity=score  # if using distance, convert to similarity
+                source="codebase",
+                reference=doc.metadata.get("source", ""),
+                similarity=-score  # Convert distance to similarity (higher = better)
             )
             for doc, score in hits
         ]
+
+        # Apply keyword re-ranking
+        results = self._rerank_by_keyword(query, results)
+        final_results = results[:top_k]
+
+        if debug:
+            self._debug_print_results(query, final_results)
+
+        return final_results
 
     def _load_vector_store(self) -> FAISS:
         return FAISS.load_local(
@@ -112,9 +124,6 @@ class CodebaseEmbeddingManager(AbstractEmbeddingManager):
             old_hashes: Dict[str, str],
             force: bool
     ) -> Tuple[List[Path], Dict[str, str]]:
-        """
-        Walks the codebase, applying include/exclude rules and collecting file hashes.
-        """
         changed_files = []
         new_hashes = {}
 
@@ -147,7 +156,6 @@ class CodebaseEmbeddingManager(AbstractEmbeddingManager):
         """
         Embed changed files in batches.
         """
-
         try:
             db = FAISS.load_local(str(self.codebase_dir), self.embedding_fn)
         except Exception:
@@ -159,7 +167,11 @@ class CodebaseEmbeddingManager(AbstractEmbeddingManager):
             for path in batch:
                 try:
                     loader = TextLoader(path, encoding='utf-8')
-                    documents.extend(loader.load())
+                    docs = loader.load()
+                    # Add reference to metadata for later display
+                    for doc in docs:
+                        doc.metadata["source"] = str(path)
+                    documents.extend(docs)
                 except Exception as e:
                     console.print(f"[yellow]Warning:[/] Could not load file {path}: {e}")
 

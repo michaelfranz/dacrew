@@ -1,8 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from pathlib import Path
 
-from langchain_community.vectorstores import FAISS
 
 @dataclass
 class EmbeddingResult:

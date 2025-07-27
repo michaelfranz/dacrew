@@ -1,9 +1,7 @@
 import hashlib
-import json
 import os
 import shutil
 from pathlib import Path
-from typing import Dict
 
 from rich.console import Console
 

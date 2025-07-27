@@ -38,11 +38,14 @@ embedding:
   # ---------------------------------------------------------
   documents:
     paths:
-      - "docs/architecture/"
-      - "docs/design-specs/spec.pdf"
+      - "docs/Object-Oriented-Python.docx"
+      - "docs/Python_CLI_Application.pdf"
+      - "docs/Python_Tips.txt"
+      - "docs/README.me"
     urls:
-      - "https://mycompanywiki.com/project-guidelines"
-      - "https://developer.mozilla.org/en-US/docs/Web/HTTP"
+      - "https://realpython.com/python-click/"
+      - "https://gist.github.com/ruimaranhao/4e18cbe3dad6f68040c32ed6709090a3"
+      - "https://dev.to/devasservice/python-best-practices-writing-clean-efficient-and-maintainable-code-34bj"
 
 # =====================================================================
 # Generation (Build & Test Commands)

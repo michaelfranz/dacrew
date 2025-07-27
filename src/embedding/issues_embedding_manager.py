@@ -13,7 +13,7 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from rich.console import Console
 
-from .abstract_embedding_manager import AbstractEmbeddingManager, EmbeddingResult
+from .abstract_embedding_manager import AbstractEmbeddingManager, EmbeddingResult, _load_vector_store
 from .codebase_embedding_manager import config
 from .embedding_utils import _clean_directory
 from .hybrid_query_mixin import HybridQueryMixin
@@ -71,8 +71,9 @@ class IssuesEmbeddingManager(AbstractEmbeddingManager, HybridQueryMixin):
         return {"files_indexed": len(manifest.get("files", []))}
 
     def query(self, query: str, top_k: int = 5, debug: bool = False) -> List[EmbeddingResult]:
-        store = self._load_vector_store()
-        hits = store.similarity_search_with_score(query, k=top_k * 2)  # fetch more candidates
+        store = _load_vector_store(self.issues_dir, self.embedding_fn)
+        hits = store.similarity_search_with_score(query, k=top_k * 2)
+
         results = [
             EmbeddingResult(
                 content=doc.page_content,
@@ -91,14 +92,6 @@ class IssuesEmbeddingManager(AbstractEmbeddingManager, HybridQueryMixin):
             self._debug_print_results(query, results)
 
         return final_results
-
-
-    def _load_vector_store(self) -> FAISS:
-        return FAISS.load_local(
-            self.issues_dir.as_posix(),
-            self.embedding_fn,
-            allow_dangerous_deserialization=True
-        )
 
 
 def _collect_issues(

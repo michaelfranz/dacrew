@@ -665,14 +665,14 @@ def gen_command(command: str, verbose: bool):
 def _get_sources(codebase, issues, documents):
     sources = []
     if not any([codebase, issues, documents]):
-        sources = ["codebase", "issues", "docs"]
+        sources = ["codebase", "issues", "documents"]
     else:
         if codebase:
             sources.append("codebase")
         if issues:
             sources.append("issues")
         if documents:
-            sources.append("docs")
+            sources.append("documents")
     return sources
 
 def _get_stats(codebase, issues, documents):

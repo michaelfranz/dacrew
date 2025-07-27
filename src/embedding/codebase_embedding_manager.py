@@ -16,14 +16,13 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from rich.console import Console
 
-from .abstract_embedding_manager import AbstractEmbeddingManager, EmbeddingResult
+from .abstract_embedding_manager import AbstractEmbeddingManager, EmbeddingResult, _load_vector_store
 from .embedding_utils import _clean_directory, _hash_file
 from .hybrid_query_mixin import HybridQueryMixin
 from ..config import Config
 
 console = Console()
 config = Config.load()
-
 
 class CodebaseEmbeddingManager(AbstractEmbeddingManager, HybridQueryMixin):
     BATCH_SIZE = 50  # Number of files to embed in one batch (for memory safety)
@@ -83,9 +82,7 @@ class CodebaseEmbeddingManager(AbstractEmbeddingManager, HybridQueryMixin):
         return {"files_indexed": len(manifest.get("files", {}))}
 
     def query(self, query: str, top_k: int = 5, debug: bool = False) -> List[EmbeddingResult]:
-        store = self._load_vector_store()
-
-        # Get more candidates before reranking
+        store = _load_vector_store(self.codebase_dir, self.embedding_fn)
         hits = store.similarity_search_with_score(query, k=top_k * 2)
 
         results = [
@@ -107,12 +104,6 @@ class CodebaseEmbeddingManager(AbstractEmbeddingManager, HybridQueryMixin):
 
         return final_results
 
-    def _load_vector_store(self) -> FAISS:
-        return FAISS.load_local(
-            self.codebase_dir.as_posix(),
-            self.embedding_fn,
-            allow_dangerous_deserialization=True
-        )
 
     @staticmethod
     def _collect_files(

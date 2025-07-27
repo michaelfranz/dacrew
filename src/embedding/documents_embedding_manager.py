@@ -3,13 +3,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from langchain_community.document_loaders import TextLoader, WebBaseLoader
+from langchain_community.document_loaders import TextLoader, WebBaseLoader, PyPDFLoader, Docx2txtLoader
 from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from rich.console import Console
 
-from .abstract_embedding_manager import AbstractEmbeddingManager, EmbeddingResult
+from .abstract_embedding_manager import AbstractEmbeddingManager, EmbeddingResult, _load_vector_store
 from .embedding_utils import _clean_directory
 from .hybrid_query_mixin import HybridQueryMixin
 from ..config import Config
@@ -29,6 +29,21 @@ def _hash_file(file_path: Path, chunk_size: int = 8192) -> str:
         while chunk := f.read(chunk_size):
             sha1.update(chunk)
     return sha1.hexdigest()
+
+
+def _load_document(path: Path):
+    """
+    Load a file (text, PDF, or Word) and return a list of Document objects.
+    """
+    ext = path.suffix.lower()
+    if ext == ".pdf":
+        loader = PyPDFLoader(str(path))
+    elif ext in [".doc", ".docx"]:
+        loader = Docx2txtLoader(str(path))
+    else:
+        loader = TextLoader(str(path), encoding="utf-8")
+
+    return loader.load()  # Always returns a List[Document]
 
 class DocumentsEmbeddingManager(AbstractEmbeddingManager, HybridQueryMixin):
     BATCH_SIZE = 20  # Number of documents to embed in one batch
@@ -83,9 +98,7 @@ class DocumentsEmbeddingManager(AbstractEmbeddingManager, HybridQueryMixin):
         return {"documents_indexed": len(manifest.get("doc-hashes", {}))}
 
     def query(self, query: str, top_k: int = 5, debug: bool = False) -> List[EmbeddingResult]:
-        store = self._load_vector_store()
-
-        # Fetch more candidates for hybrid re-ranking
+        store = _load_vector_store(self.documents_dir, self.embedding_fn)
         hits = store.similarity_search_with_score(query, k=top_k * 2)
 
         results = [
@@ -106,13 +119,6 @@ class DocumentsEmbeddingManager(AbstractEmbeddingManager, HybridQueryMixin):
             self._debug_print_results(query, final_results)
 
         return final_results
-
-    def _load_vector_store(self) -> FAISS:
-        return FAISS.load_local(
-            self.documents_dir.as_posix(),
-            self.embedding_fn,
-            allow_dangerous_deserialization=True
-        )
 
     # ---------------------------------------------------------
     # Private Helpers
@@ -163,8 +169,7 @@ class DocumentsEmbeddingManager(AbstractEmbeddingManager, HybridQueryMixin):
             for doc_info in batch:
                 if doc_info["type"] == "file":
                     try:
-                        loader = TextLoader(doc_info["source"], encoding='utf-8')
-                        docs = loader.load()
+                        docs = _load_document(Path(doc_info["source"]))
                         for d in docs:
                             d.metadata["source"] = str(doc_info["source"])
                         documents.extend(docs)

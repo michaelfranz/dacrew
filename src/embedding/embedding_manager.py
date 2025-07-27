@@ -69,17 +69,17 @@ class EmbeddingManager:
     def clean(self, sources: List[str]):
         if "codebase" in sources:
             self.codebase_manager.clean()
-        elif "issues" in sources:
+        if "issues" in sources:
             self.issues_manager.clean()
-        elif "documents" in sources:
+        if "documents" in sources:
             self.documents_manager.clean()
 
 
     def get_stats(self, sources: List[str]):
         if "codebase" in sources:
             self.codebase_manager.stats()
-        elif "issues" in sources:
+        if "issues" in sources:
             self.issues_manager.stats()
-        elif "documents" in sources:
+        if "documents" in sources:
             self.documents_manager.stats()
 

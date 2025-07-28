@@ -2,10 +2,53 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
+from typing import List, Optional, Dict
 
 import yaml
 from pydantic import SecretStr
+
+# ------------------------------
+# Crew Configuration
+# ------------------------------
+@dataclass
+class CrewAgentConfig:
+    name: str
+    role: str
+    goal: str
+    tools: List[str] = field(default_factory=list)
+    llm: str = "gpt-4"
+    tasks: List[str] = field(default_factory=list)
+    jira_workflow: Dict[str, str] = field(default_factory=dict)
+
+@dataclass
+class CrewToolConfig:
+    name: str
+    description: str
+    type: str
+    config: dict = field(default_factory=dict)
+
+
+@dataclass
+class CrewTaskConfig:
+    name: str
+    description: str
+    input: Optional[str] = None
+    output: Optional[str] = None
+
+
+@dataclass
+class CrewWorkflowConfig:
+    steps: List[str] = field(default_factory=list)
+
+
+@dataclass
+class CrewConfig:
+    name: str
+    description: str
+    agents: List[CrewAgentConfig] = field(default_factory=list)
+    tools: List[CrewToolConfig] = field(default_factory=list)
+    tasks: List[CrewTaskConfig] = field(default_factory=list)
+    workflow: CrewWorkflowConfig = field(default_factory=CrewWorkflowConfig)
 
 
 @dataclass
@@ -78,6 +121,7 @@ class Config:
     commands: CommandsConfig
     git: GitConfig
     config_file: Path
+    crew: Optional[CrewConfig] = None  # Added crew section
 
     @classmethod
     def load(cls, project_root: Path = Path.cwd()) -> 'Config':
@@ -106,6 +150,34 @@ class Config:
         embedding_conf = merged.get("embedding", {})
         gen_conf = merged.get("gen", {})
         git_conf = merged.get("git", {})
+        crew_conf = merged.get("crew")
+
+        # Parse crew section
+        crew = None
+        if crew_conf:
+            crew = CrewConfig(
+                name=crew_conf.get("name", "default_crew"),
+                description=crew_conf.get("description", ""),
+                agents=[
+                    CrewAgentConfig(
+                        name=a.get("name"),
+                        role=a.get("role", ""),
+                        goal=a.get("goal", ""),
+                        tools=a.get("tools", []),
+                        llm=a.get("llm", "gpt-4"),
+                        tasks=a.get("tasks", []),
+                        jira_workflow=a.get("jira_workflow", {})
+                    )
+                    for a in crew_conf.get("agents", [])
+                ],
+                tools=[CrewToolConfig(**t) for t in crew_conf.get("tools", [])],
+                tasks=[CrewTaskConfig(**tsk) for tsk in crew_conf.get("tasks", [])],
+                workflow=CrewWorkflowConfig(
+                    steps=crew_conf.get("workflow", {}).get("steps", [])
+                ),
+            )
+            for agent in crew.agents:
+                _validate_jira_workflow(agent)
 
         return cls(
             project=merged["project"],
@@ -128,13 +200,13 @@ class Config:
                 url=jira_conf.get("url", ""),
                 jira_project_key=jira_conf.get("jira_project_key", ""),
                 user_id=jira_conf.get("user_id", ""),
-                api_token=jira_conf.get("api_token", "")  # global only
+                api_token=jira_conf.get("api_token", "")
             ),
             ai=AIConfig(
                 model=ai_conf.get("model", "gpt-4"),
                 temperature=float(ai_conf.get("temperature", 0.7)),
                 embeddings_model=ai_conf.get("embeddings_model", "sentence-transformers/all-MiniLM-L6-v2"),
-                openai_api_key=ai_conf.get("openai_api_key", "")
+                openai_api_key=SecretStr(ai_conf.get("openai_api_key", ""))
             ),
             commands=CommandsConfig(
                 build=gen_conf.get("build", "./gradlew build"),
@@ -144,7 +216,8 @@ class Config:
                 default_branch_prefix=git_conf.get("default_branch_prefix", "feature/"),
                 commit_template=git_conf.get("commit_template", "Implementing {ISSUE_ID}: {ISSUE_TITLE}")
             ),
-            config_file=project_config_path if project_config_path.exists() else global_config_path
+            config_file=project_config_path if project_config_path.exists() else global_config_path,
+            crew=crew
         )
 
     @staticmethod
@@ -169,7 +242,6 @@ class Config:
                     f"Move it to ~/.dacrew/config.yml instead."
                 )
 
-
 def _merge_configs(global_config: dict, project_config: dict) -> dict:
     """
     Merge global and project configs.
@@ -190,3 +262,10 @@ def _merge_configs(global_config: dict, project_config: dict) -> dict:
         return base
 
     return deep_merge(merged, project_config)
+
+
+def _validate_jira_workflow(agent: CrewAgentConfig):
+    required_keys = ["start", "in_progress", "done", "failed"]
+    for key in required_keys:
+        if key not in agent.jira_workflow:
+            raise ValueError(f"❌ Missing '{key}' in jira_workflow for agent '{agent.name}'.")

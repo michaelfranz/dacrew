@@ -109,6 +109,46 @@ ai:
   # Embedding model for code and issues (HuggingFace or OpenAI)
   embeddings_model: "sentence-transformers/all-MiniLM-L6-v2"
 
+crew:
+  name: codegen_crew
+  description: >
+    Define crea agents, tasks, workflows here.
+
+  agents:
+    - name: requirement_agent
+      role: Requirement Interpreter
+      goal: >
+        Analyze the user requirement and create a structured specification 
+        including pseudocode, file placement, dependencies, and patterns.
+      tools:
+        - embedding_retriever
+      llm: gpt-4-turbo
+      tasks:
+        - task_analyze_requirement
+      jira_workflow:
+        start: "Draft Requirement"
+        in_progress: "Analyzing Requirement"
+        done: "Ready for Development"
+        failed: "Blocked"
+
+  tools:
+    - name: embedding_retriever
+      description: >
+        Retrieves semantically relevant code and documentation chunks from 
+        FAISS/BM25 hybrid embeddings of the codebase.
+      type: retrieval
+      config:
+        retriever: faiss
+        reranker: bm25
+        top_k: 10
+
+  tasks:
+    - name: task_analyze_requirement
+      description: >
+        Create a technical specification and pseudocode plan for the user request.
+      input: user_requirement
+      output: code_specification
+
 # =====================================================================
 # Additional defaults or secrets can be added here
 # =====================================================================
@@ -210,6 +250,46 @@ ai:
 
   # Embedding model for code and issues (HuggingFace or OpenAI)
   embeddings_model: "sentence-transformers/all-MiniLM-L6-v2"
+
+crew:
+  name: codegen_crew
+  description: >
+    Define crea agents, tasks, workflows here.
+
+  agents:
+    - name: requirement_agent
+      role: Requirement Interpreter
+      goal: >
+        Analyze the user requirement and create a structured specification 
+        including pseudocode, file placement, dependencies, and patterns.
+      tools:
+        - embedding_retriever
+      llm: gpt-4-turbo
+      tasks:
+        - task_analyze_requirement
+      jira_workflow:
+        start: "Draft Requirement"
+        in_progress: "Analyzing Requirement"
+        done: "Ready for Development"
+        failed: "Blocked"
+
+  tools:
+    - name: embedding_retriever
+      description: >
+        Retrieves semantically relevant code and documentation chunks from 
+        FAISS/BM25 hybrid embeddings of the codebase.
+      type: retrieval
+      config:
+        retriever: faiss
+        reranker: bm25
+        top_k: 10
+
+  tasks:
+    - name: task_analyze_requirement
+      description: >
+        Create a technical specification and pseudocode plan for the user request.
+      input: user_requirement
+      output: code_specification
 """
 
 
@@ -258,14 +338,14 @@ def test_jira_connection():
         if not config.jira.url:
             console.print("❌ Jira URL not configured", style="red")
             return
-        if not config.jira.username:
+        if not config.jira.user_id:
             console.print("❌ Jira username not configured", style="red")
             return
         if not config.jira.api_token:
             console.print("❌ Jira API token not configured", style="red")
             return
 
-        client = JiraClient(config)
+        client = JiraClient(config.jira)
         if client.test_connection():
             console.print("✅ Jira connection successful!", style="green")
             console.print(f"Connected to: {config.jira.url}", style="dim")
@@ -352,7 +432,7 @@ def show_issue(issue_key: str):
         from .jira_client import JiraClient
 
         config = Config.load()
-        client = JiraClient(config)
+        client = JiraClient(config.jira)
 
         issue = client.get_issue(issue_key)
 
@@ -405,7 +485,7 @@ def create_issue(
         from .jira_client import JiraClient
 
         config = Config.load()
-        client = JiraClient(config)
+        client = JiraClient(config.jira)
 
         # Use default project if not specified
         if not project:

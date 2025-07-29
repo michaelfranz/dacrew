@@ -477,6 +477,22 @@ class JiraClient:
             logger.error(f"Failed to transition issue {issue_key}: {e}")
             return False
 
+    def transition_issue_by_status(self, issue_key: str, target_status: str) -> bool:
+        """
+        Transition an issue to the target status by matching the status name.
+        """
+        try:
+            transitions = self.get_transitions(issue_key)
+            for t in transitions:
+                if t['to'].lower() == target_status.lower():
+                    return self.transition_issue(issue_key, t['id'])
+
+            logger.warning(f"No transition found from {issue_key} to status '{target_status}'.")
+            return False
+        except Exception as e:
+            logger.error(f"Error transitioning issue {issue_key} to '{target_status}': {e}")
+            return False
+
     def _format_issue(self, issue) -> Dict[str, Any]:
         """Format Jira issue object to dictionary"""
         return {

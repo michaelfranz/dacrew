@@ -1,15 +1,7 @@
 """AI Agents package for Dacrew"""
 
-from .agent_manager import AgentManager
-from .base_agent import BaseJiraAgent
-from .analysis_agent import AnalysisAgent
-from .jira_action_agent import JiraActionAgent
-from .jira_query_agent import JiraQueryAgent
+from .base_agent import BaseAgent
 
 __all__ = [
-    'BaseJiraAgent',
-    'AnalysisAgent',
-    'JiraQueryAgent',
-    'JiraActionAgent',
-    'AgentManager'
+    'BaseAgent',
 ]

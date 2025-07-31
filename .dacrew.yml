@@ -109,8 +109,17 @@ crew:
       goal: >
         Analyze the user requirement and create a structured specification 
         including pseudocode, file placement, dependencies, and patterns.
+      knowledge:
+        codebase:
+          enabled: true
+          tags: []
+        jira:
+          enabled: true
+        documents:
+          enabled: true
+          tags: []
       tools:
-        - embedding_retriever
+        - jira
       llm: gpt-4-turbo
       tasks:
         - task_analyze_requirement
@@ -122,12 +131,37 @@ crew:
 
     - name: code_agent
       role: Code Generator
+      backstory: >
+        You are an experienced Java developer with 10+ years of experience in enterprise applications.
+        You excel at translating business requirements into clean, maintainable code that follows best practices.
+        and create comprehensive tests.
+        Your expertise includes:
+        - Creating comprehensive unit and integration tests using JUnit 5, AssertJ and Mockito
+        - Following established project patterns and conventions
+        - Code build tools like gradle and maven and their configuration
+        - Implementing proper error handling and logging
+        - Writing clear, concise documentation
+        You always:
+        - Analyze existing codebase patterns before implementing new features
+        - Write tests first when possible (TDD approach)
+        - Consider performance, security, and maintainability implications
+        - Validate your implementation against the original requirements
       goal: >
+        Implement well-structured, tested Java code based on a specification.
         Generate code that implements the requirement, following codebase 
         conventions and referencing retrieved patterns.
+      knowledge:
+        codebase:
+          enabled: true
+          tags: []
+        jira:
+          enabled: true
+        documents:
+          enabled: false
+          tags: []
       tools:
-        - embedding_retriever
         - static_analysis
+        - jira
       llm: gpt-4-turbo
       tasks:
         - task_generate_code
@@ -139,11 +173,31 @@ crew:
 
     - name: test_agent
       role: Test Generator
+      backstory: >
+        You are an experienced Java developer with 10+ years of experience in enterprise application testing.
+        You in writing comprehensive unit and integration tests using testing.
+        Your expertise includes:
+        - Creating comprehensive unit and integration tests using JUnit 5, AssertJ and Mockito
+        - Following established project patterns and conventions
+        - Code build tools like gradle and maven and their configuration
+        - Implementing proper error handling and logging
+        - Writing clear, concise documentation
+        You always:
+        - Analyze existing codebase patterns before implementing new features
       goal: >
         Produce unit and integration tests for the generated code, 
         based on codebase testing practices.
+      knowledge:
+        codebase:
+          enabled: true
+          tags: []
+        jira:
+          enabled: true
+        documents:
+          enabled: false
+          tags: []
       tools:
-        - embedding_retriever
+        - jira
       llm: gpt-4-turbo
       tasks:
         - task_generate_tests
@@ -155,13 +209,26 @@ crew:
 
     - name: qa_agent
       role: QA & Refiner
+      backstory: >
+        You are an expert in software code quality. You identify software quality use
+        though the use of static code analysis tools, searches on best-practice code style and structure.
+        Highlight, anti-patterns and code smells.
       goal: >
         Review code and tests, run static analysis and test executions 
         if possible, and iteratively refine code until it meets quality criteria.
+      knowledge:
+        codebase:
+          enabled: true
+          tags: []
+        jira:
+          enabled: true
+        documents:
+          enabled: false
+          tags: []
       tools:
         - static_analysis
         - test_executor
-        - embedding_retriever
+        - jira
       llm: gpt-4-turbo
       tasks:
         - task_refine_code

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 
 import yaml
 from pydantic import SecretStr
@@ -10,11 +10,25 @@ from pydantic import SecretStr
 # ------------------------------
 # Crew Configuration
 # ------------------------------
+
+@dataclass
+class KnowledgeSourceConfig:
+    enabled: bool = False
+    tags: List[str] = field(default_factory=list)
+
+@dataclass
+class AgentKnowledgeConfig:
+    codebase: KnowledgeSourceConfig = field(default_factory=KnowledgeSourceConfig)
+    jira: KnowledgeSourceConfig = field(default_factory=KnowledgeSourceConfig)
+    documents: KnowledgeSourceConfig = field(default_factory=KnowledgeSourceConfig)
+
 @dataclass
 class CrewAgentConfig:
     name: str
     role: str
+    backstory: str
     goal: str
+    knowledge: AgentKnowledgeConfig = field(default_factory=AgentKnowledgeConfig)
     tools: List[str] = field(default_factory=list)
     llm: str = "gpt-4"
     tasks: List[str] = field(default_factory=list)
@@ -162,7 +176,9 @@ class Config:
                     CrewAgentConfig(
                         name=a.get("name"),
                         role=a.get("role", ""),
+                        backstory=a.get("backstory", ""),
                         goal=a.get("goal", ""),
+                        knowledge=parse_agent_knowledge_config(a.get("knowledge")),
                         tools=a.get("tools", []),
                         llm=a.get("llm", "gpt-4"),
                         tasks=a.get("tasks", []),
@@ -241,6 +257,24 @@ class Config:
                     f"❌ '{section}.{key}' must NOT be defined in project config (.dacrew.yml). "
                     f"Move it to ~/.dacrew/config.yml instead."
                 )
+
+def parse_agent_knowledge_config(raw: Optional[Dict[str, Any]]) -> AgentKnowledgeConfig:
+    def parse_source(source: Optional[Dict[str, Any]]) -> KnowledgeSourceConfig:
+        if not source:
+            return KnowledgeSourceConfig()
+        return KnowledgeSourceConfig(
+            enabled=source.get("enabled", False),
+            tags=source.get("tags", [])
+        )
+
+    if raw is None:
+        return AgentKnowledgeConfig()
+
+    return AgentKnowledgeConfig(
+        codebase=parse_source(raw.get("codebase")),
+        jira=parse_source(raw.get("jira")),
+        documents=parse_source(raw.get("documents"))
+    )
 
 def _merge_configs(global_config: dict, project_config: dict) -> dict:
     """

@@ -2,11 +2,11 @@ import logging
 
 from embedding import EmbeddingManager
 from jira_client import JiraClient
-from ..config import Config, CrewAgentConfig, CrewTaskConfig
+from config import Config, CrewAgentConfig, CrewTaskConfig
 
 logger = logging.getLogger(__name__)
 
-from ..tools.tool_repository import resolve_tools
+from tools.tool_repository import resolve_tools
 
 from crewai import Crew, Agent, Task, CrewOutput
 

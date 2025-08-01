@@ -17,7 +17,7 @@ from .abstract_embedding_manager import AbstractEmbeddingManager, EmbeddingResul
 from .codebase_embedding_manager import config
 from .embedding_utils import _clean_directory
 from .hybrid_query_mixin import HybridQueryMixin
-from ..jira_client import JiraClient
+from jira_client import JiraClient
 
 console = Console()
 

@@ -37,6 +37,16 @@ COMMANDS = {
             ]
         }
     },
+    "agent": {
+        "subcommands": ["run", "list"],
+        "options": {
+            "run": [
+                "--issue",
+                "--dry-run",
+                "--config-path"
+            ]
+        }
+    },
     "gen": {
         "subcommands": [],
         "options": [
@@ -53,7 +63,6 @@ COMMANDS = {
     "quit": {"subcommands": [], "options": []},
     "bye": {"subcommands": [], "options": []}
 }
-
 
 class DaCrewCompleter(Completer):
     def get_completions(

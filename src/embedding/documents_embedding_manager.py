@@ -12,7 +12,7 @@ from rich.console import Console
 from .abstract_embedding_manager import AbstractEmbeddingManager, EmbeddingResult, _load_vector_store
 from .embedding_utils import _clean_directory
 from .hybrid_query_mixin import HybridQueryMixin
-from ..config import Config
+from config import Config
 
 console = Console()
 config = Config.load()

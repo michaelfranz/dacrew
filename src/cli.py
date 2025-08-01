@@ -4,6 +4,9 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from agents import BaseAgent
+from config import Config
+from jira_client import JiraClient
 # Import required managers
 from .dacrew_completer import DaCrewCompleter
 from .embedding.embedding_manager import EmbeddingManager
@@ -19,15 +22,9 @@ GLOBAL_EXAMPLE_CONFIG_CONTENT = """
 # Global configuration for DaCrew.
 # Copy this file to ~/.dacrew/config.yml and update it with your values.
 
-# =====================================================================
-# Embedding Configuration
-# =====================================================================
 embedding:
-  # ---------------------------------------------------------
-  # Codebase Embedding
-  # ---------------------------------------------------------
   codebase:
-    path: "./"  # Path to the project source root
+    path: "./"
     include_patterns:
       - "src/**/*.java"
       - "src/**/*.py"
@@ -35,16 +32,10 @@ embedding:
       - "node_modules/**"
       - "build/**"
 
-  # ---------------------------------------------------------
-  # Jira Issues Embedding
-  # ---------------------------------------------------------
   issues:
     include_statuses: ["To Do", "In Progress", "Done"]
     exclude_statuses: ["Deleted", "Archived"]
 
-  # ---------------------------------------------------------
-  # Documents & Web Embedding
-  # ---------------------------------------------------------
   documents:
     paths:
       - "docs/architecture/"
@@ -53,83 +44,49 @@ embedding:
       - "https://mycompanywiki.com/project-guidelines"
       - "https://developer.mozilla.org/en-US/docs/Web/HTTP"
 
-# =====================================================================
-# Generation (Build & Test Commands)
-# =====================================================================
 gen:
-  # Build command relative to the workspace/current directory
   build: "./gradlew build"
-
-  # Test command relative to the workspace/current directory
   test: "./gradlew test"
 
-# =====================================================================
-# Git Settings
-# =====================================================================
 git:
-  # Default branch prefix for branches created by dacrew
   default_branch_prefix: "dacrew/"
-
-  # Commit message template
-  # Available placeholders: {ISSUE_ID}, {ISSUE_TITLE}
   commit_template: "Implementing {ISSUE_ID}: {ISSUE_TITLE}"
 
-# =====================================================================
-# Jira Configuration
-# =====================================================================
 jira:
-  # Jira API token (generate this from Jira account settings)
   api_token: "your-api-token"
-
-  # URL to your Jira instance (e.g., https://yourcompany.atlassian.net)
   url: "https://custom-jira-instance.atlassian.net"
-
-  # Jira project key (e.g., ABC)
   jira_project_key: "ABC"
-
-  # Default user ID (often the username or email)
   user_id: "john.doe"
-  
-  # The maximum number of issues fetched in a given query
   fetch_limit: 500
 
-# =====================================================================
-# AI and Embeddings
-# =====================================================================
 ai:
-  # API key for OpenAI or other providers
   openai_api_key: "your-openai-api-key"
-
-  # Model for code generation and other AI tasks
   model: "gpt-4"
-
-  # Temperature controls randomness (0.0 = deterministic)
   temperature: 0.7
-
-  # Embedding model for code and issues (HuggingFace or OpenAI)
   embeddings_model: "sentence-transformers/all-MiniLM-L6-v2"
 
 crew:
   name: codegen_crew
   description: >
-    Define crea agents, tasks, workflows here.
+    A sample multi-agent setup for code generation and review.
 
   agents:
     - name: requirement_agent
       role: Requirement Interpreter
       goal: >
-        Analyze the user requirement and create a structured specification 
-        including pseudocode, file placement, dependencies, and patterns.
+        Analyze the user requirement and create a structured specification.
+      knowledge:
+        codebase: { enabled: true }
+        jira: { enabled: true }
+        documents: { enabled: true }
       tools:
         - embedding_retriever
       llm: gpt-4-turbo
-      tasks:
-        - task_analyze_requirement
-      jira_workflow:
-        start: "Draft Requirement"
-        in_progress: "Analyzing Requirement"
-        done: "Ready for Development"
-        failed: "Blocked"
+      issue_routing:
+        Story:
+          Draft Requirement:
+            name: task_analyze_requirement
+            tags: ["architecture", "spec"]
 
   tools:
     - name: embedding_retriever
@@ -148,34 +105,17 @@ crew:
         Create a technical specification and pseudocode plan for the user request.
       input: user_requirement
       output: code_specification
-
-# =====================================================================
-# Additional defaults or secrets can be added here
-# =====================================================================
 """
 
 PROJECT_EXAMPLE_CONFIG_CONTENT = """
-# .dacrew-example.yml
+
+# ~/.dacrew/config.yml
 # Project-specific configuration for DaCrew.
-# Copy this file to .dacrew.yml in your project root and update it with your values.
-#
-# Values here override or extend those in ~/.dacrew/config.yml for this project.
-# DO NOT PLACE API KEYS IN THIS FILE
+# Copy this file to ~/.dacrew/config.yml and update it with your values.
 
-# =====================================================================
-# Project Configuration
-# =====================================================================
-project: "my-project"  # Unique identifier for this project (must match workspace name)
-
-# =====================================================================
-# Embedding Configuration
-# =====================================================================
 embedding:
-  # ---------------------------------------------------------
-  # Codebase Embedding
-  # ---------------------------------------------------------
   codebase:
-    path: "./"  # Path to the project source root
+    path: "./"
     include_patterns:
       - "src/**/*.java"
       - "src/**/*.py"
@@ -183,16 +123,10 @@ embedding:
       - "node_modules/**"
       - "build/**"
 
-  # ---------------------------------------------------------
-  # Jira Issues Embedding
-  # ---------------------------------------------------------
   issues:
     include_statuses: ["To Do", "In Progress", "Done"]
     exclude_statuses: ["Deleted", "Archived"]
 
-  # ---------------------------------------------------------
-  # Documents & Web Embedding
-  # ---------------------------------------------------------
   documents:
     paths:
       - "docs/architecture/"
@@ -201,77 +135,47 @@ embedding:
       - "https://mycompanywiki.com/project-guidelines"
       - "https://developer.mozilla.org/en-US/docs/Web/HTTP"
 
-# =====================================================================
-# Generation (Build & Test Commands)
-# =====================================================================
 gen:
-  # Build command relative to the workspace/current directory
   build: "./gradlew build"
-
-  # Test command relative to the workspace/current directory
   test: "./gradlew test"
 
-# =====================================================================
-# Git Settings
-# =====================================================================
 git:
-  # Default branch prefix for branches created by dacrew
   default_branch_prefix: "dacrew/"
-
-  # Commit message template
-  # Available placeholders: {ISSUE_ID}, {ISSUE_TITLE}
   commit_template: "Implementing {ISSUE_ID}: {ISSUE_TITLE}"
 
-# =====================================================================
-# Jira Configuration
-# =====================================================================
 jira:
-  # URL to your Jira instance (e.g., https://yourcompany.atlassian.net)
   url: "https://custom-jira-instance.atlassian.net"
-
-  # Jira project key (e.g., ABC)
   jira_project_key: "ABC"
-
-  # Default user ID (often the username or email)
   user_id: "john.doe"
-
-  # The maximum number of issues fetched in a given query
   fetch_limit: 500
 
-# =====================================================================
-# AI and Embeddings
-# =====================================================================
 ai:
-  # Model for code generation and other AI tasks
   model: "gpt-4"
-
-  # Temperature controls randomness (0.0 = deterministic)
   temperature: 0.7
-
-  # Embedding model for code and issues (HuggingFace or OpenAI)
   embeddings_model: "sentence-transformers/all-MiniLM-L6-v2"
 
 crew:
   name: codegen_crew
   description: >
-    Define crea agents, tasks, workflows here.
+    A sample multi-agent setup for code generation and review.
 
   agents:
     - name: requirement_agent
       role: Requirement Interpreter
       goal: >
-        Analyze the user requirement and create a structured specification 
-        including pseudocode, file placement, dependencies, and patterns.
+        Analyze the user requirement and create a structured specification.
+      knowledge:
+        codebase: { enabled: true }
+        jira: { enabled: true }
+        documents: { enabled: true }
       tools:
         - embedding_retriever
       llm: gpt-4-turbo
-      tasks:
-        - task_analyze_requirement
-      jira_workflow:
-        start: "Draft Requirement"
-        in_progress: "Analyzing Requirement"
-        done: "Ready for Development"
-        failed: "Blocked"
+      issue_routing:
+        Story:
+          Draft Requirement:
+            name: task_analyze_requirement
+            tags: ["architecture", "spec"]
 
   tools:
     - name: embedding_retriever
@@ -354,6 +258,71 @@ def test_jira_connection():
 
     except Exception as e:
         console.print(f"❌ Error testing connection: {str(e)}", style="red")
+
+# ============================================================================
+# ISSUES COMMAND GROUP
+# ============================================================================
+agent_app = typer.Typer(help="🤖 Run an agent on a specific JIRA issue")
+app.add_typer(agent_app, name="agent")
+
+@agent_app.command("run")
+def run_agent(
+        issue: str = typer.Option(..., "--issue", "-i", help="JIRA issue ID"),
+        config_path: Path = typer.Option(Path.cwd(), "--config-path", help="Path to config root"),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview agent and task without running")
+):
+    """Run the appropriate agent and task for the given JIRA issue."""
+    try:
+        config = Config.load(config_path)
+        jira_client = JiraClient(config.jira)
+        issue_data = jira_client.get_issue(issue)
+
+        issue_type = issue_data["issue_type"]
+        issue_status = issue_data["status"]
+
+        matched = None
+        for agent_conf in config.crew.agents:
+            routing = agent_conf.issue_routing or {}
+            if issue_type in routing:
+                if issue_status in routing[issue_type]:
+                    matched = (agent_conf.name, routing[issue_type][issue_status])
+                    break
+
+        if not matched:
+            console.print(f"❌ No agent configured to handle '{issue_type}' in status '{issue_status}'", style="red")
+            raise typer.Exit(1)
+
+        agent_name, task_meta = matched
+        task_name = task_meta["name"]
+        tags = task_meta.get("tags", [])
+
+        if dry_run:
+            console.print(f"🔍 [bold]Dry run:[/bold] Issue '{issue}' would be handled by agent '[cyan]{agent_name}[/cyan]' executing task '[green]{task_name}[/green]' with tags {tags}", style="yellow")
+            return
+
+        agent = BaseAgent(config=config, agent_name=agent_name)
+        agent.run(issue)
+        console.print(f"✅ Agent '[cyan]{agent_name}[/cyan]' ran successfully for issue '[bold]{issue}[/bold]'", style="green")
+
+    except Exception as e:
+        console.print(f"❌ Error running agent: {str(e)}", style="red")
+
+
+@agent_app.command("list")
+def list_agents():
+    """📋 List available agents"""
+    try:
+        from .config import Config
+        config = Config.load()
+        if not config.crew or not config.crew.agents:
+            console.print("No agents configured", style="yellow")
+            return
+
+        for agent in config.crew.agents:
+            console.print(f"🤖 {agent.name}: {agent.goal or 'No goal'}")
+    except Exception as e:
+        console.print(f"❌ Error listing agents: {str(e)}", style="red")
+
 
 # ============================================================================
 # ISSUES COMMAND GROUP
@@ -632,10 +601,37 @@ def process_command(command, verbose):
         embeddings_command(command, verbose)
     elif command.startswith('issues '):
         issues_command(command, verbose)
-    elif command.startswith('gen '):
-        gen_command(command, verbose)
+    elif command.startswith('agent '):
+        agent_command(command, verbose)
     else:
         print(f"Unknown command: {command}")
+
+
+def agent_command(command: str, verbose: bool):
+    """
+    Handle 'agent' commands within REPL mode by delegating to the Typer app.
+    """
+    if verbose:
+        console.print(f"Handling agent command: {command}", style="dim")
+
+    try:
+        # Split the command into arguments (like shell)
+        args = shlex.split(command)
+        # Remove the leading 'agent'
+        args = args[1:]
+        console.print(f"🐛 DEBUG: args = {args}", style="magenta")
+
+        if not args:
+            console.print("⚠️ No agent subcommand provided. Type 'help agent' for options.", style="yellow")
+            return
+
+        # Invoke Typer's agent_app
+        agent_app(args)
+    except SystemExit:
+        # Typer may call sys.exit(), catch it to prevent REPL from exiting
+        pass
+    except Exception as e:
+        console.print(f"❌ Error handling agent command: {str(e)}", style="red")
 
 
 def embeddings_command(command: str, verbose: bool):
@@ -686,61 +682,6 @@ def issues_command(command: str, verbose: bool):
     except Exception as e:
         console.print(f"❌ Error handling issues command: {str(e)}", style="red")
 
-
-gen_app = typer.Typer(help="✨ Generate issues, code and other artifacts")
-app.add_typer(gen_app, name="gen")
-
-
-@gen_app.callback(invoke_without_command=True)
-def gen_callback(
-        ctx: typer.Context,
-        issue_key: str = typer.Option(..., "--issue", "-i", help="JIRA issue key (e.g., ABC-123)"),
-        auto_commit: bool = typer.Option(False, "--auto-commit", "-c", help="Commit and push if tests pass"),
-        allow_fail: bool = typer.Option(False, "--allow-fail", help="Commit and push even if tests fail"),
-        dry_run: bool = typer.Option(False, "--dry-run", help="Preview generation steps without executing"),
-        skip_tests: bool = typer.Option(False, "--skip-tests", help="Skip build and test execution"),
-        branch: str = typer.Option(None, "--branch", "-b", help="Custom branch name"),
-):
-    """
-    ✨ Generate code for a single JIRA requirement.
-    """
-    if ctx.invoked_subcommand is not None:
-        return
-
-    from .workflows import perform_gen
-    perform_gen(
-        issue_key=issue_key,
-        auto_commit=auto_commit,
-        allow_fail=allow_fail,
-        dry_run=dry_run,
-        skip_tests=skip_tests,
-        branch=branch
-    )
-
-
-def gen_command(command: str, verbose: bool):
-    """
-    Handle 'issues' commands within REPL mode by delegating to the Typer app.
-    """
-    if verbose:
-        console.print(f"Handling gen command: {command}", style="dim")
-
-    try:
-        # Split the command into arguments (like shell)
-        args = shlex.split(command)
-        # Remove the leading 'issues'
-        args = args[1:]
-        if not args:
-            console.print("⚠️ No issues subcommand provided. Type 'help gen' for options.", style="yellow")
-            return
-
-        # Invoke Typer's gen_app
-        gen_app(args)
-    except SystemExit:
-        # Typer may call sys.exit(), catch it to prevent REPL from exiting
-        pass
-    except Exception as e:
-        console.print(f"❌ Error handling gen command: {str(e)}", style="red")
 
 def _get_sources(codebase, issues, documents):
     sources = []

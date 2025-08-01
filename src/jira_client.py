@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Optional
 from jira import JIRA
 from jira.exceptions import JIRAError
 
-from .config import JiraConfig
+from config import JiraConfig
 
 logger = logging.getLogger(__name__)
 

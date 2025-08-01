@@ -1,10 +1,10 @@
 import logging
 from typing import Optional
 
-from ..config import Config, CrewAgentConfig, CrewTaskConfig
-from ..embedding.embedding_manager import EmbeddingManager
-from ..jira_client import JiraClient
-from ..tasks.task_runner import TaskRunner
+from config import Config, CrewAgentConfig, CrewTaskConfig
+from embedding.embedding_manager import EmbeddingManager
+from jira_client import JiraClient
+from tasks.task_runner import TaskRunner
 
 logger = logging.getLogger(__name__)
 
@@ -37,26 +37,39 @@ class BaseAgent:
     def run(self, issue_id: str):
         """
         Run the agent for the given JIRA issue.
-        1. Update JIRA to 'in_progress' state for the agent.
-        2. Execute tasks in order.
-        3. Update JIRA to 'done' or 'failed'.
+        1. Look up the issue and determine the task based on issue type/status.
+        2. Update JIRA to 'in_progress' state for the agent.
+        3. Execute the mapped task.
+        4. Update JIRA to 'done' or 'failed'.
         """
-        self._log(f"agent {self.name} running for issue {issue_id}...")
+        self._log(f"Agent '{self.name}' running for issue '{issue_id}'...")
 
         try:
-            self._set_jira_status(issue_id, "in_progress")
-            self._add_agent_comment(issue_id, "Started processing.")
+            # Retrieve issue details
+            issue = self.jira.get_issue(issue_id)
+            issue_type = issue.get("issue_type")
+            status = issue.get("status")
 
-            for task_name in self.agent_config.tasks:
-                self._execute_task(issue_id, task_name)
+            task_entry = self.agent_config.issue_routing.get(issue_type, {}).get(status)
+
+            if not task_entry:
+                raise ValueError(f"No task routing found for issue type '{issue_type}' with status '{status}'")
+
+            task_name = task_entry["name"]
+            self._log(f"Mapped to task '{task_name}' (tags: {task_entry.get('tags', [])})")
+
+            self._set_jira_status(issue_id, "in_progress")
+            self._add_agent_comment(issue_id, f"🧠 Started task: **{task_name}**")
+
+            self._execute_task(issue_id, task_name)
 
             self._set_jira_status(issue_id, "done")
-            self._add_agent_comment(issue_id, "Completed all tasks.")
+            self._add_agent_comment(issue_id, f"✅ Completed task: **{task_name}**")
 
         except Exception as e:
-            logger.error(f"Agent {self.name} failed: {e}", exc_info=True)
+            logger.error(f"Agent '{self.name}' failed: {e}", exc_info=True)
             self._set_jira_status(issue_id, "failed")
-            self._add_agent_comment(issue_id, "Failed: {str(e)}")
+            self._add_agent_comment(issue_id, f"❌ Failed due to error: {str(e)}")
 
     def _execute_task(self, issue_id: str, task_name: str):
         """
@@ -79,13 +92,31 @@ class BaseAgent:
 
     def _set_jira_status(self, issue_id: str, stage: str):
         """
-        Set the JIRA issue status based on the agent's jira_workflow mapping.
+        Set the JIRA issue status based on the agent's issue_routing mapping.
+        Stage must be one of: 'in_progress', 'done', or 'failed'.
         """
-        status = self.agent_config.jira_workflow.get(stage)
-        if not status:
-            self._log(f"No status mapping for stage '{stage}' in agent {self.name}.")
+        issue = self.jira.get_issue(issue_id)
+        issue_type = issue.get("issue_type")
+        current_status = issue.get("status")
+
+        task_entry = self.agent_config.issue_routing.get(issue_type, {}).get(current_status)
+        if not task_entry:
+            self._log(f"No issue_routing found for issue type '{issue_type}' with status '{current_status}'")
             return
-        self.jira.transition_issue_by_status(issue_id, status)
+
+        status_mapping = {
+            "in_progress": task_entry.get("status_in_progress"),
+            "done": task_entry.get("status_done"),
+            "failed": task_entry.get("status_failed")
+        }
+
+        target_status = status_mapping.get(stage)
+        if not target_status:
+            self._log(f"No status transition defined for stage '{stage}' in task '{task_entry.get('name')}'")
+            return
+
+        self._log(f"Transitioning issue {issue_id} to '{target_status}' (stage: {stage})")
+        self.jira.transition_issue_by_status(issue_id, target_status)
 
     def _add_agent_comment(self, issue_key: str, comment: str) -> bool:
         tagged_comment = f"[Agent: {self.name}] {comment}"

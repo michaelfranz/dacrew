@@ -23,6 +23,17 @@ class AgentKnowledgeConfig:
     documents: KnowledgeSourceConfig = field(default_factory=KnowledgeSourceConfig)
 
 @dataclass
+class AgentTaskEntry:
+    name: str
+    tags: List[str] = field(default_factory=list)
+
+@dataclass
+class AgentKnowledgeConfig:
+    codebase: KnowledgeSourceConfig = field(default_factory=KnowledgeSourceConfig)
+    jira: KnowledgeSourceConfig = field(default_factory=KnowledgeSourceConfig)
+    documents: KnowledgeSourceConfig = field(default_factory=KnowledgeSourceConfig)
+
+@dataclass
 class CrewAgentConfig:
     name: str
     role: str
@@ -31,16 +42,13 @@ class CrewAgentConfig:
     knowledge: AgentKnowledgeConfig = field(default_factory=AgentKnowledgeConfig)
     tools: List[str] = field(default_factory=list)
     llm: str = "gpt-4"
-    tasks: List[str] = field(default_factory=list)
-    jira_workflow: Dict[str, str] = field(default_factory=dict)
-
+    issue_routing: Dict[str, Dict[str, Dict[str, Any]]] = field(default_factory=dict)
 @dataclass
 class CrewToolConfig:
     name: str
     description: str
     type: str
     config: dict = field(default_factory=dict)
-
 
 @dataclass
 class CrewTaskConfig:
@@ -49,11 +57,9 @@ class CrewTaskConfig:
     input: Optional[str] = None
     output: Optional[str] = None
 
-
 @dataclass
 class CrewWorkflowConfig:
     steps: List[str] = field(default_factory=list)
-
 
 @dataclass
 class CrewConfig:
@@ -64,7 +70,6 @@ class CrewConfig:
     tasks: List[CrewTaskConfig] = field(default_factory=list)
     workflow: CrewWorkflowConfig = field(default_factory=CrewWorkflowConfig)
 
-
 @dataclass
 class JiraConfig:
     """Jira connection configuration"""
@@ -74,7 +79,6 @@ class JiraConfig:
     fetch_limit: int = 500
     api_token: str = ""   # From global config only
 
-
 @dataclass
 class AIConfig:
     """AI/LLM configuration"""
@@ -82,7 +86,6 @@ class AIConfig:
     temperature: float = 0.7
     embeddings_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     openai_api_key: SecretStr = SecretStr("")  # From global config only
-
 
 # ------------------------------
 # Embedding Configs
@@ -93,18 +96,15 @@ class CodebaseEmbeddingConfig:
     include_patterns: List[str] = field(default_factory=lambda: ["src/**/*.java", "src/**/*.py"])
     exclude_patterns: List[str] = field(default_factory=lambda: ["node_modules/**", "build/**"])
 
-
 @dataclass
 class IssuesEmbeddingConfig:
     include_statuses: List[str] = field(default_factory=lambda: None)
     exclude_statuses: List[str] = field(default_factory=lambda: ["Cancelled"])
 
-
 @dataclass
 class DocumentsEmbeddingConfig:
     paths: List[str] = field(default_factory=list)
     urls: List[str] = field(default_factory=list)
-
 
 @dataclass
 class EmbeddingConfig:
@@ -112,18 +112,15 @@ class EmbeddingConfig:
     issues: IssuesEmbeddingConfig = field(default_factory=IssuesEmbeddingConfig)
     documents: DocumentsEmbeddingConfig = field(default_factory=DocumentsEmbeddingConfig)
 
-
 @dataclass
 class CommandsConfig:
     build: str = "./gradlew build"
     test: str = "./gradlew test"
 
-
 @dataclass
 class GitConfig:
     default_branch_prefix: str = "feature/"
     commit_template: str = "Implementing {ISSUE_ID}: {ISSUE_TITLE}"
-
 
 @dataclass
 class Config:
@@ -181,8 +178,7 @@ class Config:
                         knowledge=parse_agent_knowledge_config(a.get("knowledge")),
                         tools=a.get("tools", []),
                         llm=a.get("llm", "gpt-4"),
-                        tasks=a.get("tasks", []),
-                        jira_workflow=a.get("jira_workflow", {})
+                        issue_routing=a.get("issue_routing", {})
                     )
                     for a in crew_conf.get("agents", [])
                 ],
@@ -192,8 +188,10 @@ class Config:
                     steps=crew_conf.get("workflow", {}).get("steps", [])
                 ),
             )
-            for agent in crew.agents:
-                _validate_jira_workflow(agent)
+            _validate_issue_routing_conflicts_and_tasks(
+                agents=crew.agents,
+                defined_tasks=crew.tasks
+            )
 
         return cls(
             project=merged["project"],
@@ -276,6 +274,17 @@ def parse_agent_knowledge_config(raw: Optional[Dict[str, Any]]) -> AgentKnowledg
         documents=parse_source(raw.get("documents"))
     )
 
+def parse_agent_tasks(raw: Dict[str, Any]) -> Dict[str, Dict[str, AgentTaskEntry]]:
+    tasks = {}
+    for issue_type, statuses in raw.items():
+        tasks[issue_type] = {}
+        for status, val in statuses.items():
+            tasks[issue_type][status] = AgentTaskEntry(
+                name=val.get("name"),
+                tags=val.get("tags", [])
+            )
+    return tasks
+
 def _merge_configs(global_config: dict, project_config: dict) -> dict:
     """
     Merge global and project configs.
@@ -297,9 +306,33 @@ def _merge_configs(global_config: dict, project_config: dict) -> dict:
 
     return deep_merge(merged, project_config)
 
+def _validate_issue_routing_conflicts_and_tasks(
+        agents: List[CrewAgentConfig],
+        defined_tasks: List[CrewTaskConfig]
+):
+    """Validate uniqueness of issue routing and task reference integrity."""
+    seen_routes = {}  # (issue_type, status) -> agent_name
+    defined_task_names = {task.name for task in defined_tasks}
 
-def _validate_jira_workflow(agent: CrewAgentConfig):
-    required_keys = ["start", "in_progress", "done", "failed"]
-    for key in required_keys:
-        if key not in agent.jira_workflow:
-            raise ValueError(f"❌ Missing '{key}' in jira_workflow for agent '{agent.name}'.")
+    for agent in agents:
+        for issue_type, status_map in agent.issue_routing.items():
+            for status, route in status_map.items():
+                key = (issue_type, status)
+
+                # Check for duplicate routes
+                if key in seen_routes:
+                    other_agent = seen_routes[key]
+                    raise ValueError(
+                        f"❌ Conflict in issue_routing: Issue type '{issue_type}' with status '{status}' "
+                        f"is defined in both agent '{agent.name}' and agent '{other_agent}'."
+                    )
+                seen_routes[key] = agent.name
+
+                # Check task existence
+                task_name = route.get("name")
+                if task_name not in defined_task_names:
+                    raise ValueError(
+                        f"❌ Undefined task: Agent '{agent.name}' refers to task '{task_name}' "
+                        f"in issue_routing for type '{issue_type}' and status '{status}', "
+                        f"but this task is not defined in the top-level 'tasks' section."
+                    )

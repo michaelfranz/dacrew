@@ -6,6 +6,7 @@ from typing import List
 
 from rich.console import Console
 
+from config import AgentKnowledgeConfig
 from .abstract_embedding_manager import EmbeddingResult
 from .codebase_embedding_manager import CodebaseEmbeddingManager
 from .documents_embedding_manager import DocumentsEmbeddingManager
@@ -83,3 +84,44 @@ class EmbeddingManager:
         if "documents" in sources:
             self.documents_manager.stats()
 
+
+def resolve_knowledge(config: AgentKnowledgeConfig, embedding_manager: EmbeddingManager):
+    """
+    Resolve knowledge configuration for CrewAI Agent.
+    Returns a callable that can retrieve relevant knowledge during task execution.
+    :param config: The agent's knowledge configuration
+    :param embedding_manager: Manages the project's embeddings
+    """
+    if not config:
+        return None
+    
+    # Determine which sources are enabled
+    enabled_sources = []
+    if hasattr(config, 'codebase') and config.codebase and getattr(config.codebase, 'enabled', False):
+        enabled_sources.append('codebase')
+    if hasattr(config, 'jira') and config.jira and getattr(config.jira, 'enabled', False):
+        enabled_sources.append('issues')
+    if hasattr(config, 'documents') and config.documents and getattr(config.documents, 'enabled', False):
+        enabled_sources.append('documents')
+    
+    if not enabled_sources:
+        return None
+    
+    def knowledge_retrieval_function(query: str, **kwargs) -> str:
+        """
+        Custom knowledge retrieval function that queries the embedding manager.
+        This function will be called by CrewAI when the agent needs knowledge.
+        """
+        try:
+            results = embedding_manager.query(query, enabled_sources, top_k=5)
+            
+            # Format results for the agent
+            knowledge_text = "\n\n".join([
+                f"Source: {result.source}\nContent: {result.content}"
+                for result in results
+            ])
+            return knowledge_text
+        except Exception as e:
+            return f"Knowledge retrieval failed: {str(e)}"
+    
+    return knowledge_retrieval_function

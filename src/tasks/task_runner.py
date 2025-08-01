@@ -7,6 +7,7 @@ from config import Config, CrewAgentConfig, CrewTaskConfig
 logger = logging.getLogger(__name__)
 
 from tools.tool_repository import resolve_tools
+from embedding.embedding_manager import resolve_knowledge
 
 from crewai import Crew, Agent, Task, CrewOutput
 
@@ -46,7 +47,7 @@ class TaskRunner:
             backstory=self.agent_config.backstory,
             goal=self.agent_config.goal,
             tools=resolve_tools(self.agent_config.tools),
-            knowledge=resolve_knowledge(self.agent_config.knowledge),
+            knowledge=resolve_knowledge(self.agent_config.knowledge, self.embedding_manager),
             llm=self.agent_config.llm,
             verbose=True
         )

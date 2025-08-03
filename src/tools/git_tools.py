@@ -48,15 +48,45 @@ def create_git_branch(local_dir: str, base_branch: str, new_branch: str) -> str:
     
     
 @tool("GitCommitAndPush")
-def git_commit_and_push(message: str, branch: str) -> str:
+def git_commit_and_push(message: str, branch: str, local_dir: str = ".") -> str:
     """Commit changes and push to the remote repository."""
+    try:
+        subprocess.run(["git", "-C", local_dir, "add", "."], check=True, capture_output=True, text=True)
+        subprocess.run(["git", "-C", local_dir, "commit", "-m", message], check=True, capture_output=True, text=True)
+        result = subprocess.run(
+            ["git", "-C", local_dir, "push", "-u", "origin", branch],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return f"Committed and pushed to {branch}:\n{result.stdout}"
+    except subprocess.CalledProcessError as e:
+        return f"Git command failed:\n{e.stderr}"
 
 
 @tool("GitStatus")
-def git_status() -> str:
+def git_status(local_dir: str = ".") -> str:
     """Get current git status including modified files."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", local_dir, "status", "--short"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout
+    except subprocess.CalledProcessError as e:
+        return f"Git command failed:\n{e.stderr}"
 
 
 @tool("GitDiff")
-def git_diff(file_path: str = "") -> str:
+def git_diff(file_path: str = "", local_dir: str = ".") -> str:
     """Show differences in modified files."""
+    try:
+        cmd = ["git", "-C", local_dir, "diff"]
+        if file_path:
+            cmd.append(file_path)
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        return result.stdout
+    except subprocess.CalledProcessError as e:
+        return f"Git command failed:\n{e.stderr}"

@@ -16,7 +16,7 @@ class EmbeddingResult:
     similarity: float
 
 
-def _load_vector_store(store_dir: Path, embedding_fn: Embeddings) -> None | FAISS:
+def _load_faiss_vector_store(store_dir: Path, embedding_fn: Embeddings) -> None | FAISS:
     try:
         return FAISS.load_local(
             store_dir.as_posix(),

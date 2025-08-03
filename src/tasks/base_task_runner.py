@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from embedding import EmbeddingManager
 from jira_client import JiraClient
@@ -11,7 +12,7 @@ from tools.tool_repository import resolve_tools
 from crewai import Crew, Agent, Task, CrewOutput
 
 
-class TaskRunner:
+class BaseTaskRunner:
     def __init__(self, config: Config, agent_config: CrewAgentConfig):
         self.config = config
         self.agent_config = agent_config
@@ -26,14 +27,22 @@ class TaskRunner:
         if not issue_data:
             raise ValueError(f"Issue {issue_id} not found in JIRA.")
 
+        self._update_jira_status(task, issue_id, "In progress")
+
         # 2. Build the Crew
         crew = self._build_crew(task, issue_data)
 
-        # 3. Kick off Crew execution
+        # 3. Perform pre-agent action
+        self._pre_agent_action(issue_data)
+
+        # 4. Kick off Crew execution
         result = crew.kickoff()
 
-        # 4. Handle the task result
-        self._handle_task_output(task, issue_id, result)
+        # 5. Perform post-agent action
+        self._post_agent_action(issue_data)
+
+        # 6. Handle the task result
+        self._update_jira_status(task, issue_id, "In progress")
         return result
 
     def _build_crew(self, task: CrewTaskConfig, issue_data: dict) -> Crew:
@@ -63,7 +72,19 @@ class TaskRunner:
             verbose=True
         )
 
-    def _handle_task_output(self, task: CrewTaskConfig, issue_id: str, result: CrewOutput):
+    def _pre_agent_action(self, issue_date: dict[str, Any]):
+        pass
+
+    def _post_agent_action(self, issue_date: dict[str, Any]):
+        pass
+
+    def _update_jira_status(self, task: CrewTaskConfig, issue_id: str, status: str):
+        """
+        Save or report the task's output (e.g., to JIRA).
+        """
+        self.jira.update_issue(issue_id, )
+
+    def _update_jira(self, task: CrewTaskConfig, issue_id: str, result: CrewOutput):
         """
         Save or report the task's output (e.g., to JIRA).
         """

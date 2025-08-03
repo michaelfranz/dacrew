@@ -9,7 +9,7 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from rich.console import Console
 
-from .abstract_embedding_manager import AbstractEmbeddingManager, EmbeddingResult, _load_vector_store
+from .abstract_embedding_manager import AbstractEmbeddingManager, EmbeddingResult, _load_faiss_vector_store
 from .embedding_utils import _clean_directory
 from .hybrid_query_mixin import HybridQueryMixin
 from config import Config
@@ -98,7 +98,7 @@ class DocumentsEmbeddingManager(AbstractEmbeddingManager, HybridQueryMixin):
         return {"documents_indexed": len(manifest.get("doc-hashes", {}))}
 
     def query(self, query: str, top_k: int = 5, debug: bool = False) -> List[EmbeddingResult]:
-        store = _load_vector_store(self.documents_dir, self.embedding_fn)
+        store = _load_faiss_vector_store(self.documents_dir, self.embedding_fn)
         hits = store.similarity_search_with_score(query, k=top_k * 2)
 
         results = [

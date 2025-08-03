@@ -16,7 +16,7 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from rich.console import Console
 
-from .abstract_embedding_manager import AbstractEmbeddingManager, EmbeddingResult, _load_vector_store
+from .abstract_embedding_manager import AbstractEmbeddingManager, EmbeddingResult, _load_faiss_vector_store
 from .embedding_utils import _clean_directory, _hash_file
 from .hybrid_query_mixin import HybridQueryMixin
 from config import Config
@@ -82,7 +82,7 @@ class CodebaseEmbeddingManager(AbstractEmbeddingManager, HybridQueryMixin):
         return {"files_indexed": len(manifest.get("files", {}))}
 
     def query(self, query: str, top_k: int = 5, debug: bool = False) -> List[EmbeddingResult]:
-        store = _load_vector_store(self.codebase_dir, self.embedding_fn)
+        store = _load_faiss_vector_store(self.codebase_dir, self.embedding_fn)
         hits = store.similarity_search_with_score(query, k=top_k * 2)
 
         results = [

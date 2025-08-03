@@ -38,25 +38,21 @@ COMMANDS = {
         }
     },
     "agent": {
-        "subcommands": ["run", "list"],
+        "subcommands": ["run", "code"],
         "options": {
             "run": [
                 "--issue",
                 "--dry-run",
-                "--config-path"
+            ],
+            "code": [
+                "--issue",
+                "--dry-run",
+                "--auto-commit",
+                "--allow-fail",
+                "--skip-tests",
+                "--branch"
             ]
         }
-    },
-    "gen": {
-        "subcommands": [],
-        "options": [
-            "--issue",
-            "--dry-run",
-            "--auto-commit",
-            "--allow-fail",
-            "--skip-tests",
-            "--branch"
-        ]
     },
     "help": {"subcommands": [], "options": []},
     "exit": {"subcommands": [], "options": []},

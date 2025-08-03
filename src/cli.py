@@ -307,6 +307,48 @@ def run_agent(
     except Exception as e:
         console.print(f"❌ Error running agent: {str(e)}", style="red")
 
+@agent_app.command("code")
+def code_agent(
+        issue: str = typer.Option(..., "--issue", "-i", help="JIRA issue ID"),
+        config_path: Path = typer.Option(Path.cwd(), "--config-path", help="Path to config root"),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview agent and task without running")
+):
+    """Run the appropriate agent and task for the given JIRA issue."""
+    try:
+        config = Config.load(config_path)
+        jira_client = JiraClient(config.jira)
+        issue_data = jira_client.get_issue(issue)
+
+        issue_type = issue_data["issue_type"]
+        issue_status = issue_data["status"]
+
+        matched = None
+        for agent_conf in config.crew.agents:
+            routing = agent_conf.issue_routing or {}
+            if issue_type in routing:
+                if issue_status in routing[issue_type]:
+                    matched = (agent_conf.name, routing[issue_type][issue_status])
+                    break
+
+        if not matched:
+            console.print(f"❌ No agent configured to handle '{issue_type}' in status '{issue_status}'", style="red")
+            raise typer.Exit(1)
+
+        agent_name, task_meta = matched
+        task_name = task_meta["name"]
+        tags = task_meta.get("tags", [])
+
+        if dry_run:
+            console.print(f"🔍 [bold]Dry run:[/bold] Issue '{issue}' would be handled by agent '[cyan]{agent_name}[/cyan]' executing task '[green]{task_name}[/green]' with tags {tags}", style="yellow")
+            return
+
+        agent = BaseAgent(config=config, agent_name=agent_name)
+        agent.run(issue)
+        console.print(f"✅ Agent '[cyan]{agent_name}[/cyan]' ran successfully for issue '[bold]{issue}[/bold]'", style="green")
+
+    except Exception as e:
+        console.print(f"❌ Error running agent: {str(e)}", style="red")
+
 
 @agent_app.command("list")
 def list_agents():
@@ -565,14 +607,6 @@ def query_embeddings(
         if result.reference:
             console.print(f"Reference: {result.reference}", style="blue")
         console.print(result.content, style="green")
-
-# ============================================================================
-# GEN COMMAND GROUP
-# ============================================================================
-gen_app = typer.Typer(help="✨ Generate code and artifacts")
-app.add_typer(gen_app, name="gen")
-
-# (gen_command logic remains unchanged)
 
 # ============================================================================
 # REPL

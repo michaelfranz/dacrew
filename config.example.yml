@@ -3,8 +3,27 @@ jira:
   user_id: your-user@example.com
   token: your-api-token
 projects:
-  - project_id: SAMPLE
+  - project_id:
     type_status_map:
       Bug:
         To Do: todo-evaluator
         Ready for Development: ready-for-development-evaluator
+    embedding:
+      codebase:
+        repo: "https://github.com/michaelfranz/h6bridge"  # Project source repository
+        include_patterns:
+          - "src/**/*.java"
+          - "src/**/*.py"
+        exclude_patterns:
+          - "node_modules/**"
+          - "build/**"
+    documents:
+      paths:
+        - "docs/Python_CLI_Application.pdf"
+        - "docs/Python_Tips.txt"
+        - "docs/README.me"
+      urls:
+        - "https://realpython.com/python-click/"
+        - "https://gist.github.com/ruimaranhao/4e18cbe3dad6f68040c32ed6709090a3"
+        - "https://dev.to/devasservice/python-best-practices-writing-clean-efficient-and-maintainable-code-34bj"
+

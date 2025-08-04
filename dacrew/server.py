@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+import os
 from fastapi import FastAPI
 
 from .config import AppConfig
 from .service import EvaluationService
 
 
-def create_app(config_path: str = "config.yml") -> FastAPI:
-    """Create and configure the FastAPI application."""
+def create_app(config_path: str | None = None) -> FastAPI:
+    """Create and configure the FastAPI application.
 
-    cfg = AppConfig.load(config_path)
+    The configuration file path can be provided explicitly or through the
+    ``DACREW_CONFIG`` environment variable. If neither is supplied, the
+    application defaults to ``config.yml`` in the working directory.
+    """
+
+    path = config_path or os.environ.get("DACREW_CONFIG", "config.yml")
+    cfg = AppConfig.load(path)
     service = EvaluationService(cfg)
 
     app = FastAPI(title="dacrew")

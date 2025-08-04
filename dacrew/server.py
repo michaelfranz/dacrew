@@ -14,6 +14,14 @@ def create_app(config_path: str = "config.json") -> FastAPI:
 
     app = FastAPI(title="dacrew")
 
+    @app.on_event("startup")
+    async def _start_service() -> None:
+        service.start()
+
+    @app.on_event("shutdown")
+    async def _stop_service() -> None:
+        await service.stop()
+
     @app.post("/evaluate/{project_id}/{issue_id}")
     async def evaluate(project_id: str, issue_id: str) -> dict[str, str]:
         await service.enqueue(project_id, issue_id)

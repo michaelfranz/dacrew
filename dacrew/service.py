@@ -22,11 +22,30 @@ class EvaluationService:
         self.config = cfg
         self.jira = JiraClient(cfg.jira)
         self.queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
-        self.worker_task = asyncio.create_task(self._worker())
+        self.worker_task: asyncio.Task[None] | None = None
+
+    def start(self) -> None:
+        """Start the background worker task."""
+
+        if self.worker_task is None or self.worker_task.done():
+            self.worker_task = asyncio.create_task(self._worker())
+
+    async def stop(self) -> None:
+        """Stop the background worker task."""
+
+        if self.worker_task is not None:
+            self.worker_task.cancel()
+            try:
+                await self.worker_task
+            except asyncio.CancelledError:  # pragma: no cover - cancellation path
+                pass
 
     async def _worker(self) -> None:
         while True:
-            project_id, issue_id = await self.queue.get()
+            try:
+                project_id, issue_id = await self.queue.get()
+            except asyncio.CancelledError:
+                break
             try:
                 await self._process_issue(project_id, issue_id)
             finally:

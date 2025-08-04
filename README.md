@@ -10,7 +10,8 @@ A server application that evaluates Jira issues for their content quality using
   comments.
 - Uses an in-memory queue so expensive LLM evaluations are processed one at a
   time.
-- FastAPI server exposing an endpoint to enqueue evaluations.
+- FastAPI server exposing an endpoint to enqueue evaluations and manages a
+  background worker for processing tasks.
 
 ## Getting started
 

@@ -1,22 +1,20 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
 try:
     import yaml  # type: ignore
-except Exception:  # pragma: no cover - optional dependency
+except Exception:  # pragma: no cover - PyYAML required at runtime
     yaml = None
 
 
 def _load_file(path: str | Path) -> dict:
+    if yaml is None:  # pragma: no cover - dependency check
+        raise RuntimeError("PyYAML is required to load configuration files")
     with open(path, "r", encoding="utf-8") as fh:
-        text = fh.read()
-    if yaml is not None:
-        return yaml.safe_load(text) or {}
-    return json.loads(text)
+        return yaml.safe_load(fh) or {}
 
 
 @dataclass
@@ -45,7 +43,7 @@ class AppConfig:
 
     @staticmethod
     def load(path: str | Path) -> "AppConfig":
-        """Load configuration from a YAML or JSON file."""
+        """Load configuration from a YAML file."""
 
         data = _load_file(path)
         jira = JiraConfig(**data["jira"])

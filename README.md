@@ -18,10 +18,10 @@ A server application that evaluates Jira issues for their content quality using
 1. Create a configuration file:
 
    ```bash
-   cp config.example.json config.json
+   cp config.example.yml config.yml
    ```
 
-   Edit `config.json` with your Jira credentials and project mappings.
+   Edit `config.yml` with your Jira credentials and project mappings.
 
 2. Install dependencies:
 

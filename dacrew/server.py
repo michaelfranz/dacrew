@@ -6,7 +6,7 @@ from .config import AppConfig
 from .service import EvaluationService
 
 
-def create_app(config_path: str = "config.json") -> FastAPI:
+def create_app(config_path: str = "config.yml") -> FastAPI:
     """Create and configure the FastAPI application."""
 
     cfg = AppConfig.load(config_path)

@@ -1,1 +1,0 @@
-These PDF, Word and text files are here for test purposes. Do not remove them.

@@ -1,0 +1,18 @@
+{
+  "jira": {
+    "url": "https://your-domain.atlassian.net",
+    "user_id": "your-user@example.com",
+    "token": "your-api-token"
+  },
+  "projects": [
+    {
+      "project_id": "SAMPLE",
+      "type_status_map": {
+        "Bug": {
+          "To Do": "todo-evaluator",
+          "Ready for Development": "ready-for-development-evaluator"
+        }
+      }
+    }
+  ]
+}

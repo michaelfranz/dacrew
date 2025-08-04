@@ -12,3 +12,5 @@
 .cache/
 
 /.dacrew-example.yml
+__pycache__/
+*.pyc

@@ -7,20 +7,25 @@ projects:
       Bug:
         To Do: todo-evaluator
         Ready for Development: ready-for-development-evaluator
+    codebase:
+      repo: "https://github.com/michaelfranz/h6bridge"
+      include_patterns:
+        - "src/**/*.java"
+        - "src/**/*.kt"
+        - "src/**/*.kts"
+        - "src/**/*.xml"
+        - "src/**/*.json"
+        - "src/**/*.properties"
+        - "src/**/*.cfg"
+        - "src/**/*.txt"
+        - "src/**/*.md"
+        - "src/**/*.mf"
+      exclude_patterns:
+        - "node_modules/**"
+        - "build/**"
     embedding:
-      codebase:
-        repo: "https://github.com/michaelfranz/h6bridge"
-        include_patterns:
-          - "src/**/*.java"
-          - "src/**/*.py"
-        exclude_patterns:
-          - "node_modules/**"
-          - "build/**"
+      model: "sentence-transformers/all-MiniLM-L6-v2"
     documents:
-      paths:
-        - "docs/Python_CLI_Application.pdf"
-        - "docs/Python_Tips.txt"
-        - "docs/README.me"
       urls:
         - "https://realpython.com/python-click/"
         - "https://gist.github.com/ruimaranhao/4e18cbe3dad6f68040c32ed6709090a3"

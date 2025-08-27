@@ -7,6 +7,7 @@ from .agents.base import EvaluationResult, BaseAgent
 from .agents.ready import ReadyForDevelopmentEvaluator
 from .agents.todo import TodoEvaluator
 from .config import AppConfig
+from .embeddings import EmbeddingManager
 from .jira_client import JiraClient
 
 AGENT_REGISTRY: Dict[str, Type[BaseAgent]] = {
@@ -21,6 +22,7 @@ class EvaluationService:
     def __init__(self, cfg: AppConfig) -> None:
         self.config = cfg
         self.jira = JiraClient(cfg.jira)
+        self.embedding_manager = EmbeddingManager(cfg)
         self.queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
         self.worker_task: asyncio.Task[None] | None = None
 
@@ -54,6 +56,61 @@ class EvaluationService:
     async def enqueue(self, project_id: str, issue_id: str) -> None:
         await self.queue.put((project_id, issue_id))
 
+    async def update_embeddings(self, project_id: str) -> None:
+        """Update embeddings for a specific project."""
+        await self.embedding_manager.update_project_embeddings(project_id)
+
+    async def process_webhook_payload(self, webhook_payload: dict) -> None:
+        """Process a complete Jira webhook payload directly."""
+        # Extract issue information from webhook payload
+        issue_data = webhook_payload.get("issue", {})
+        issue_key = issue_data.get("key")
+        project_key = issue_data.get("fields", {}).get("project", {}).get("key")
+        
+        if not issue_key or not project_key:
+            raise ValueError("Could not extract issue key or project key from webhook payload")
+        
+        # Extract issue type and status from webhook data
+        issue_type = issue_data.get("fields", {}).get("issuetype", {}).get("name")
+        status = issue_data.get("fields", {}).get("status", {}).get("name")
+        
+        if not issue_type or not status:
+            raise ValueError("Could not extract issue type or status from webhook payload")
+        
+        # Find the appropriate agent for this issue type and status
+        agent_type = self.config.find_agent(project_key, issue_type, status)
+        if not agent_type:
+            return  # No agent configured for this combination
+        
+        agent_cls = AGENT_REGISTRY.get(agent_type)
+        if not agent_cls:
+            return  # Agent type not found in registry
+        
+        # Extract issue content from webhook data
+        fields = issue_data.get("fields", {})
+        issue_description = fields.get("description", "") or ""
+        issue_summary = fields.get("summary", "") or ""
+        query = f"{issue_summary} {issue_description}"
+        
+        # Get relevant context from embeddings
+        context = self.embedding_manager.get_relevant_context(project_key, query)
+        
+        # Prepare issue data with context
+        issue_dict = {
+            "description": issue_description,
+            "summary": issue_summary,
+            "context": context
+        }
+        
+        # Evaluate the issue
+        agent = agent_cls()
+        result: EvaluationResult = agent.evaluate(issue_dict)
+        
+        # Apply the evaluation result
+        self.jira.add_comment(issue_key, result.comment)
+        if result.new_status:
+            self.jira.transition(issue_key, result.new_status)
+
     async def _process_issue(self, project_id: str, issue_id: str) -> None:
         issue = self.jira.fetch_issue(issue_id)
         issue_type = issue.fields.issuetype.name
@@ -67,8 +124,21 @@ class EvaluationService:
         if not agent_cls:
             return
 
+        # Get relevant context from embeddings
+        issue_description = getattr(issue.fields, "description", "") or ""
+        issue_summary = getattr(issue.fields, "summary", "") or ""
+        query = f"{issue_summary} {issue_description}"
+        
+        context = self.embedding_manager.get_relevant_context(project_id, query)
+        
+        # Prepare issue data with context
+        issue_dict = {
+            "description": issue_description,
+            "summary": issue_summary,
+            "context": context
+        }
+        
         agent = agent_cls()
-        issue_dict = {"description": getattr(issue.fields, "description", "")}
         result: EvaluationResult = agent.evaluate(issue_dict)
         self.jira.add_comment(issue_id, result.comment)
         if result.new_status:

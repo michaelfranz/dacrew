@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import hmac
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -12,9 +12,11 @@ from typing import Dict, Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
+from dacrew.service import EvaluationService
 from .config import AppConfig
+from .model import JiraWebhook
+
 # from .service import EvaluationService  # Commented out for mock testing
 
 app = FastAPI(title="Dacrew", description="Jira issue evaluation service")
@@ -87,24 +89,39 @@ def log_error(error_message: str, request_data: str = "") -> None:
         logging.error(f"Failed to write error log: {e}")
 
 
-async def mock_process_webhook_payload(payload: Dict[str, Any], project_key: str, issue_key: str) -> None:
+async def mock_process_webhook_payload(webhook: JiraWebhook, project_key: str, issue_key: str) -> None:
     """Mock processing function for testing webhook handling."""
     log_server_message(f"[MOCK] Starting mock processing for {project_key}/{issue_key}")
     
-    # Extract key information from payload for logging
-    issue_data = payload.get("issue", {})
-    fields = issue_data.get("fields", {})
-    
-    # Log extracted information
-    issue_type = fields.get("issuetype", {}).get("name", "unknown")
-    status = fields.get("status", {}).get("name", "unknown")
-    summary = fields.get("summary", "no summary")
-    description = fields.get("description", "no description")
-    
-    log_server_message(f"[MOCK] Issue Type: {issue_type}")
-    log_server_message(f"[MOCK] Status: {status}")
-    log_server_message(f"[MOCK] Summary: {summary}")
-    log_server_message(f"[MOCK] Description length: {len(description)} characters")
+    # Extract issue details from the validated Pydantic model
+    if webhook.issue and webhook.issue.fields:
+        fields = webhook.issue.fields
+        
+        # Extract basic issue information using the model
+        issue_type = fields.issuetype.name
+        status = fields.status.name
+        summary = fields.summary
+        description = fields.description or "no description"
+        priority = fields.priority.name
+        assignee = fields.assignee.displayName if fields.assignee else "unassigned"
+        
+        log_server_message(f"[MOCK] Issue Type: {issue_type}")
+        log_server_message(f"[MOCK] Status: {status}")
+        log_server_message(f"[MOCK] Priority: {priority}")
+        log_server_message(f"[MOCK] Assignee: {assignee}")
+        log_server_message(f"[MOCK] Summary: {summary}")
+        log_server_message(f"[MOCK] Description length: {len(description)} characters")
+        
+        # Log webhook event type
+        log_server_message(f"[MOCK] Webhook Event: {webhook.webhookEvent}")
+        
+        # Log changelog information if available
+        if webhook.changelog and webhook.changelog.items:
+            log_server_message(f"[MOCK] Changelog items: {len(webhook.changelog.items)}")
+            for item in webhook.changelog.items:
+                log_server_message(f"[MOCK] Changed field: {item.field} from '{item.fromString}' to '{item.toString}'")
+    else:
+        log_server_message(f"[MOCK] No issue data available in webhook")
     
     # Simulate processing time (realistic for LLM operations)
     import asyncio
@@ -236,52 +253,45 @@ async def jira_webhook(request: Request) -> dict:
         log_error("Invalid HMAC signature", body.decode('utf-8', errors='ignore'))
         raise HTTPException(status_code=401, detail="Invalid HMAC signature")
     
-    # Parse JSON payload
+    # Parse and validate webhook payload using Pydantic model
     try:
         payload = json.loads(body)
+        log_webhook_request(payload, query_params)
+        
+        # Convert to Pydantic model for validation and structured access
+        webhook = JiraWebhook.model_validate(payload)
+        log_server_message(f"Webhook validated successfully: {webhook.webhookEvent}")
+        
     except json.JSONDecodeError as e:
         log_server_message(f"JSON parsing error: {e}")
         log_error(f"Invalid JSON in request body: {e}", body.decode('utf-8', errors='ignore'))
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
-    
-    # Log the webhook payload
-    log_webhook_request(payload, query_params)
-    
-    # Extract issue information from Jira webhook payload
-    issue_key = None
-    project_key = None
-    
-    # Extract from the issue object (standard Jira webhook format)
-    if "issue" in payload:
-        issue_data = payload["issue"]
-        issue_key = issue_data.get("key")
-        if "fields" in issue_data and "project" in issue_data["fields"]:
-            project_data = issue_data["fields"]["project"]
-            project_key = project_data.get("key")
-    
-    # Fallback to direct fields if not found in issue object
-    if not issue_key:
-        issue_key = payload.get("issueKey")
-    if not project_key:
-        project_key = payload.get("projectKey")
-    
-    if not issue_key or not project_key:
-        log_server_message("Could not extract issue information from webhook payload")
-        log_error("Could not extract issue information from webhook payload", json.dumps(payload))
-        raise HTTPException(status_code=400, detail="Could not extract issue information from webhook payload")
-    
-    # Log the webhook event for debugging
-    webhook_event = payload.get("webhookEvent", "unknown")
-    issue_event_type = payload.get("issue_event_type_name", "unknown")
-    
-    log_server_message(f"Processing webhook: {webhook_event} - {issue_event_type} for {project_key}/{issue_key}")
-    
-    try:
-        # Mock processing for testing - replace with real processing later
-        await mock_process_webhook_payload(payload, project_key, issue_key)
-        log_server_message(f"Webhook processed successfully for {project_key}/{issue_key}")
     except Exception as e:
-        log_server_message(f"Error processing webhook for {project_key}/{issue_key}: {e}")
+        log_server_message(f"Failed to validate webhook payload: {e}")
+        log_error(f"Validation error: {e}", json.dumps(payload))
+        # Continue with partial data as requested
+        log_server_message("Continuing with partial data due to validation error")
+        webhook = None
+    
+    # Extract information for processing using the model
+    try:
+        if webhook and webhook.issue:
+            issue_key = webhook.issue.key
+            project_key = webhook.issue.fields.project.key
+            webhook_event = webhook.webhookEvent
+            issue_event_type = webhook.issue_event_type_name or "unknown"
+            
+            log_server_message(f"Processing webhook: {webhook_event} - {issue_event_type} for {project_key}/{issue_key}")
+            
+            # Call mock processing function with the validated model
+            await mock_process_webhook_payload(webhook, project_key, issue_key)
+            
+            log_server_message(f"Webhook processed successfully for {project_key}/{issue_key}")
+        else:
+            log_server_message("Webhook processed but no issue data available")
+        
+    except Exception as e:
+        log_server_message(f"Error processing webhook: {e}")
         log_error(f"Error processing webhook: {e}", json.dumps(payload))
         raise HTTPException(status_code=500, detail="Error processing webhook")
     

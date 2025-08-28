@@ -27,6 +27,10 @@ COPY config.yml .
 # Create directories for embeddings and logs
 RUN mkdir -p /app/embeddings /app/logs
 
+# Set timezone
+ENV TZ=Europe/Zurich
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash dacrew && \
     chown -R dacrew:dacrew /app

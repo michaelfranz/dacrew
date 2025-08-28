@@ -1,0 +1,17 @@
+# Core web server dependencies
+fastapi==0.110.0
+uvicorn==0.29.0
+
+# Configuration and environment
+python-dotenv==1.0.0
+PyYAML==6.0.2
+
+# Jira integration
+jira==3.5.2
+atlassian-python-api==3.41.4
+
+# Basic utilities
+requests==2.31.0
+
+# Data validation
+pydantic==2.11.7

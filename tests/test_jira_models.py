@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from dacrew.model import JiraWebhook
+from dacrew.models import JiraIssueModel as JiraWebhook
 
 
 def load_sample_webhook() -> dict:

@@ -60,22 +60,22 @@ class EvaluationService:
         """Update embeddings for a specific project."""
         await self.embedding_manager.update_project_embeddings(project_id)
 
-    async def process_webhook_payload(self, webhook_payload: dict) -> None:
-        """Process a complete Jira webhook payload directly."""
-        # Extract issue information from webhook payload
-        issue_data = webhook_payload.get("issue", {})
+    async def process_webhook_payload(self, jira_issue_payload: dict) -> None:
+        """Process a complete Jira issue payload directly."""
+        # Extract issue information from Jira issue payload
+        issue_data = jira_issue_payload.get("issue", {})
         issue_key = issue_data.get("key")
         project_key = issue_data.get("fields", {}).get("project", {}).get("key")
         
         if not issue_key or not project_key:
-            raise ValueError("Could not extract issue key or project key from webhook payload")
+            raise ValueError("Could not extract issue key or project key from Jira issue payload")
         
-        # Extract issue type and status from webhook data
+        # Extract issue type and status from Jira issue data
         issue_type = issue_data.get("fields", {}).get("issuetype", {}).get("name")
         status = issue_data.get("fields", {}).get("status", {}).get("name")
         
         if not issue_type or not status:
-            raise ValueError("Could not extract issue type or status from webhook payload")
+            raise ValueError("Could not extract issue type or status from Jira issue payload")
         
         # Find the appropriate agent for this issue type and status
         agent_type = self.config.find_agent(project_key, issue_type, status)
@@ -86,7 +86,7 @@ class EvaluationService:
         if not agent_cls:
             return  # Agent type not found in registry
         
-        # Extract issue content from webhook data
+        # Extract issue content from Jira issue data
         fields = issue_data.get("fields", {})
         issue_description = fields.get("description", "") or ""
         issue_summary = fields.get("summary", "") or ""

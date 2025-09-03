@@ -160,8 +160,8 @@ class JiraChangelog(BaseModel):
     items: List[JiraChangelogItem]
 
 
-class JiraWebhook(BaseModel):
-    """Comprehensive Jira webhook model that handles all webhook types."""
+class JiraIssueModel(BaseModel):
+    """Comprehensive Jira issue model that handles all issue-related data."""
     model_config = ConfigDict(extra="ignore")
     
     # Core webhook fields

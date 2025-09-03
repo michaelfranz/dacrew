@@ -15,3 +15,9 @@ requests==2.31.0
 
 # Data validation
 pydantic==2.11.7
+
+# CLI utilities
+rich==13.7.0
+
+# Message queue
+redis==5.0.1
